@@ -129,12 +129,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "pcengine-rust"
+name = "pcengine-rust-fast"
 version = "0.1.0"
 dependencies = [
  "bincode",
  "flate2",
  "huc6280-rust",
+ "libc",
  "serde",
  "sha1",
 ]
