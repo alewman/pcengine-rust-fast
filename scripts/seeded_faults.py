@@ -351,11 +351,23 @@ FAULTS = {
         "        if self.held != 0 {",
         "what an access schedules (a VRAM commit, the timer's start) is not in the event horizon",
     ),
-    "ram-access-ignores-a-waiting-hold": (
+    "next-event-forgets-the-commit": (
+        "vdc/chip.rs",
+        "            earlier(self.seq_next_event(), self.commit_event()),\n",
+        "            self.seq_next_event(),\n",
+        "a VDC's next event leaves out a waiting VRAM access's slot",
+    ),
+    "any-card-is-plain": (
         "board.rs",
-        "== Handler::Ram && !self.unsettled",
-        "== Handler::Ram",
-        "a work RAM access never finishes in full: a hold left from outside waits for another page",
+        "            card.is::<RomCard>()\n",
+        "            true\n",
+        "a card that is not this crate's own (it may hold the CPU, raise IRQ2) has its accesses cut short too",
+    ),
+    "quiet-access-with-a-hold-waiting": (
+        "board.rs",
+        "if self.unsettled || (address >> PAGE_BITS) as usize >= HARDWARE_FIRST_PAGE {",
+        "if (address >> PAGE_BITS) as usize >= HARDWARE_FIRST_PAGE {",
+        "a work RAM or card access is cut short with a hold from outside waiting",
     ),
 }
 

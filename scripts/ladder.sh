@@ -8,8 +8,12 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 JOBS=${JOBS:-12}
 nice cargo build --release -q --manifest-path "$ROOT/Cargo.toml"
-nice cargo test --release -q --manifest-path "$ROOT/Cargo.toml" 2>&1 \
-    | grep -E "test result|FAILED|panicked|error" | grep -v " 0 passed" || true
+if ! TESTS=$(nice cargo test --release -q --manifest-path "$ROOT/Cargo.toml" 2>&1); then
+    printf '%s\n' "$TESTS" | tail -30
+    echo "cargo test: FAILED"
+    exit 1
+fi
+echo "cargo test: $(printf '%s\n' "$TESTS" | grep -o '[0-9]* passed' | awk '{ n += $1 } END { print n }') tests pass"
 nice python3 "$ROOT/scripts/lockstep.py" --jobs "$JOBS" --quiet \
     --reference-cache "$ROOT/external/refcache" | tail -5
 nice python3 "$ROOT/scripts/state_roundtrip.py" --jobs "$JOBS" | tail -1

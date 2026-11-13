@@ -29,6 +29,7 @@
 
 use huc6280::{Bus, Pins};
 
+use crate::cards::{PopulousCard, RomCard, Sf2Card, TennokoeCard};
 use crate::cpu_io::CpuIo;
 use crate::hardware_page::map_hardware_page;
 use crate::machine::{
@@ -135,6 +136,9 @@ pub struct Board {
     /// apply (the host through `board_mut()`, a port device's `catch_up`): the next access
     /// finishes in full, whatever its page.
     pub(crate) unsettled: bool,
+    /// The card is one of this crate's own (`card_is_plain`): its accesses finish like work
+    /// RAM's.
+    pub(crate) plain_card: bool,
 }
 
 impl Board {
@@ -213,7 +217,9 @@ impl Board {
             bus_detail: None,
             wake: i64::MIN,
             unsettled: true,
+            plain_card: false,
         };
+        board.plain_card = board.card_is_plain();
         let divider = board.vce.dot_divider();
         for vdc in board.vdcs.iter_mut() {
             vdc.hsync(board.timeline.line_start, divider);
@@ -238,6 +244,21 @@ impl Board {
     pub fn touch(&mut self) {
         self.wake = i64::MIN;
         self.unsettled = true;
+        self.plain_card = self.card_is_plain();
+    }
+
+    /// The fork: the card in the slot is this crate's own `RomCard`, `Sf2Card`, `PopulousCard`
+    /// or `TennokoeCard`, whose accesses use nothing of the `BoardPins` they are handed: no
+    /// hold, no interrupt line, no VDC. Any other card (an add-on's, a test's) may, and its
+    /// accesses finish in full.
+    fn card_is_plain(&mut self) -> bool {
+        self.slot.card.as_mut().is_some_and(|card| {
+            let card = card.as_any_mut();
+            card.is::<RomCard>()
+                || card.is::<Sf2Card>()
+                || card.is::<PopulousCard>()
+                || card.is::<TennokoeCard>()
+        })
     }
 
     /// The earliest master clock at which `run_to` has anything to do: the next line, the end
@@ -455,12 +476,43 @@ impl Board {
         }
     }
 
-    /// The fork's shortcut: an access to work RAM with nothing waiting (nothing left by the
-    /// host, `Board::hold` included, or by a port device's `catch_up`) has nothing to finish:
-    /// no stretch, no hold, no line or disable mask it could have changed, nothing scheduled.
+    /// The fork's shortcut: an access to work RAM or to one of this crate's own cards, with
+    /// nothing waiting (nothing left by the host, `Board::hold` included, or by a port
+    /// device's `catch_up`), has nothing to finish: no stretch (the page is below the hardware
+    /// page), no hold, no line or disable mask it could have changed, nothing scheduled.
     #[inline(always)]
-    fn quiet_page(&self, address: u32) -> bool {
-        self.pages.handler(address) == Handler::Ram && !self.unsettled
+    fn quiet_page(&self, address: u32) -> Option<Handler> {
+        if self.unsettled || (address >> PAGE_BITS) as usize >= HARDWARE_FIRST_PAGE {
+            return None;
+        }
+        match self.pages.handler(address) {
+            Handler::Ram => Some(Handler::Ram),
+            Handler::Card if self.plain_card => Some(Handler::Card),
+            _ => None,
+        }
+    }
+
+    /// The pins a card is handed (`page_read` and `page_write` make the same).
+    #[inline(always)]
+    fn card_pins(&mut self) -> (Option<&mut Box<dyn Card>>, BoardPins<'_>) {
+        let Board {
+            slot,
+            irq2,
+            held,
+            vdcs,
+            opcode,
+            ..
+        } = self;
+        (
+            slot.card.as_mut(),
+            BoardPins {
+                irq2,
+                held,
+                vdcs,
+                opcode: *opcode,
+                card: None,
+            },
+        )
     }
 
     fn finish_access(&mut self, address: u32, cycle: i64, pins: &mut Pins) {
@@ -690,12 +742,22 @@ impl Bus for Board {
         self.opcode = pins.opcode();
         let cycle = Board::cycle_clocks(pins);
         self.advance_with(cycle, Some(pins));
-        let value = if self.quiet_page(address) {
-            self.ram.read(address & ADDRESS_MASK)
-        } else {
-            let value = self.page_read(address, self.mclk);
-            self.finish_access(address, cycle, pins);
-            value
+        let address_in = address & ADDRESS_MASK;
+        let value = match self.quiet_page(address_in) {
+            Some(Handler::Ram) => self.ram.read(address_in),
+            Some(_) => {
+                let mclk = self.mclk;
+                let (card, mut pins) = self.card_pins();
+                match card {
+                    Some(card) => card.read(address_in, mclk, &mut pins),
+                    None => 0xFF,
+                }
+            }
+            None => {
+                let value = self.page_read(address, self.mclk);
+                self.finish_access(address, cycle, pins);
+                value
+            }
         };
         if let Some(log) = self.bus_log.as_mut() {
             log.push((address as u64) << 8 | value as u64);
@@ -711,11 +773,20 @@ impl Bus for Board {
         self.opcode = pins.opcode();
         let cycle = Board::cycle_clocks(pins);
         self.advance_with(cycle, Some(pins));
-        if self.quiet_page(address) {
-            self.ram.write(address & ADDRESS_MASK, value);
-        } else {
-            self.page_write(address, value, self.mclk);
-            self.finish_access(address, cycle, pins);
+        let address_in = address & ADDRESS_MASK;
+        match self.quiet_page(address_in) {
+            Some(Handler::Ram) => self.ram.write(address_in, value),
+            Some(_) => {
+                let mclk = self.mclk;
+                let (card, mut pins) = self.card_pins();
+                if let Some(card) = card {
+                    card.write(address_in, value, mclk, &mut pins);
+                }
+            }
+            None => {
+                self.page_write(address, value, self.mclk);
+                self.finish_access(address, cycle, pins);
+            }
         }
         if let Some(log) = self.bus_log.as_mut() {
             log.push((address as u64) << 8 | value as u64);
