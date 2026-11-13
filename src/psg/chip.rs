@@ -364,7 +364,7 @@ impl Psg {
         let levels = (0..128)
             .map(|u| {
                 if u < switches.silent_units {
-                    f64::from_bits(LEVEL_BITS[u as usize])
+                    f64::from_bits(LEVEL_BITS[u])
                 } else {
                     0.0
                 }
