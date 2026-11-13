@@ -64,6 +64,16 @@ pub struct Vdc {
     pub(crate) commit_at: i64,
 }
 
+/// The earlier of two optional times.
+#[inline]
+fn earlier(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, None) => a,
+        (None, b) => b,
+    }
+}
+
 impl Vdc {
     /// The reference's defaults: `vblank_dots = Some(-8)`, `vertical_at_line_start = false`,
     /// `dma_resumes = true`.
@@ -129,17 +139,17 @@ impl Vdc {
         self.pending_write.is_some() || self.pending_read.is_some()
     }
 
+    /// The fork: the earliest of the three by hand (the base board folds an array of options
+    /// through an iterator, which the compiler does not flatten).
+    #[inline]
     pub fn next_event(&self) -> Option<i64> {
-        [
-            self.seq_next_event(),
-            self.commit_event(),
+        earlier(
+            earlier(self.seq_next_event(), self.commit_event()),
             self.dma_next_event(),
-        ]
-        .into_iter()
-        .flatten()
-        .min()
+        )
     }
 
+    #[inline]
     fn commit_event(&self) -> Option<i64> {
         if self.bsy() {
             Some(self.commit_at)
@@ -153,11 +163,7 @@ impl Vdc {
             let seq_t = self.seq_next_event();
             let dma_t = self.dma_next_event();
             let commit_t = self.commit_event();
-            let due = [seq_t, dma_t, commit_t]
-                .into_iter()
-                .flatten()
-                .filter(|&t| t <= mclk)
-                .min();
+            let due = earlier(earlier(seq_t, dma_t), commit_t).filter(|&t| t <= mclk);
             let Some(t) = due else {
                 self.dma_advance(mclk);
                 return;
