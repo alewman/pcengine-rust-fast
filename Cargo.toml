@@ -14,7 +14,7 @@ name = "pcengine_rust"
 # huc6280-rust (crate huc6280), transcribed from huc6280-python v0.3.0
 # (bf20330), the revision pcengine-python v0.1.0 pins. By path while it is
 # local only: repin to a GitHub revision once both are pushed.
-huc6280 = { package = "huc6280-rust", path = "../huc6280-rust" }
+huc6280 = { package = "huc6280-rust", path = "/data/emu/huc6280-rust" }
 # Save states (src/state.rs) and the card's identity in them.
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"

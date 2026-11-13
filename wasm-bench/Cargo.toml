@@ -1,0 +1,19 @@
+[package]
+name = "pce-wasm-bench"
+version = "0.1.0"
+edition = "2021"
+description = "The board's speed under wasm (Node), and the PSG's level table there: scripts/wasm-bench.sh"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pcengine_rust = { package = "pcengine-rust-fast", path = ".." }
+
+# The profile the family's browser pages build with (play-nes, play-2600).
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"

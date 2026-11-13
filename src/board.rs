@@ -126,6 +126,15 @@ pub struct Board {
     /// When `Some`, every CPU cycle appends (kind, address, value, mclk): kind 0 read, 1 write,
     /// 2 idle (address and value 0). The lockstep gate's per-cycle mode.
     pub bus_detail: Option<Vec<(u8, u32, u8, i64)>>,
+    /// The fork's event horizon: no device has anything to do before this master clock
+    /// (`horizon`), so a CPU cycle that ends before it only moves the clock. `i64::MIN` when
+    /// it is not known (`touch`), which sends the next cycle through `run_to` as the base
+    /// board does every cycle.
+    pub(crate) wake: i64,
+    /// Something outside a bus access may have left a hold or a line for the next access to
+    /// apply (the host through `board_mut()`, a port device's `catch_up`): the next access
+    /// finishes in full, whatever its page.
+    pub(crate) unsettled: bool,
 }
 
 impl Board {
@@ -202,6 +211,8 @@ impl Board {
             opcode: 0,
             bus_log: None,
             bus_detail: None,
+            wake: i64::MIN,
+            unsettled: true,
         };
         let divider = board.vce.dot_divider();
         for vdc in board.vdcs.iter_mut() {
@@ -215,7 +226,45 @@ impl Board {
 
     /// The first VDC (the reference's `board.vdc`).
     pub fn vdc(&mut self) -> &mut Vdc {
+        self.touch();
         &mut self.vdcs[0]
+    }
+
+    /// The board was reached from outside a bus access (the host, a loaded state): forget the
+    /// event horizon, and let the next access finish in full. `System::board_mut`, `step`,
+    /// `run_frame` and `run_until` call it; a host that changes the board through
+    /// `system.cpu.bus` and then calls `system.cpu.step()` itself must too.
+    #[inline]
+    pub fn touch(&mut self) {
+        self.wake = i64::MIN;
+        self.unsettled = true;
+    }
+
+    /// The earliest master clock at which `run_to` has anything to do: the next line, the end
+    /// of the row being drawn, each VDC's next event, the timer's next tick (every tick, not
+    /// only the underflow: the count is state). `i64::MIN` (every cycle) while a VRAM DMA runs
+    /// or waits, which moves words or its own clock at every catch-up, and with a device on
+    /// the expansion port, which is promised a `catch_up` at every advance (socket 5).
+    fn horizon(&self) -> i64 {
+        if self.port.is_some() {
+            return i64::MIN;
+        }
+        let mut at = self.timeline.next_line_start();
+        if let Some(row_at) = self.row_end {
+            at = at.min(row_at);
+        }
+        for vdc in self.vdcs.iter() {
+            if vdc.dma.running {
+                return i64::MIN;
+            }
+            if let Some(vdc_at) = vdc.next_event() {
+                at = at.min(vdc_at);
+            }
+        }
+        if let Some(tick_at) = self.cpu_io.timer.next_tick() {
+            at = at.min(tick_at);
+        }
+        at
     }
 
     /// Mixed stereo samples (44.1 kHz) of every audio source up to the clock now.
@@ -406,6 +455,14 @@ impl Board {
         }
     }
 
+    /// The fork's shortcut: an access to work RAM with nothing waiting (nothing left by the
+    /// host, `Board::hold` included, or by a port device's `catch_up`) has nothing to finish:
+    /// no stretch, no hold, no line or disable mask it could have changed, nothing scheduled.
+    #[inline(always)]
+    fn quiet_page(&self, address: u32) -> bool {
+        self.pages.handler(address) == Handler::Ram && !self.unsettled
+    }
+
     fn finish_access(&mut self, address: u32, cycle: i64, pins: &mut Pins) {
         // The disable mask a write to $1402 left (the reference's `_irq_disable_changed`,
         // called from inside the write: nothing has touched the CPU since).
@@ -423,17 +480,24 @@ impl Board {
         for vdc in self.vdcs.iter_mut() {
             self.held += vdc.take_hold();
         }
+        // The fork: the access may have scheduled something (a VRAM commit, the timer's start).
+        self.wake = i64::MIN;
         if self.held != 0 {
             let held = std::mem::take(&mut self.held);
             self.advance_with(held, Some(&mut *pins));
         }
         // the access itself (a status read) may have changed a line
         self.deliver_lines(Some(pins), false);
+        if self.wake == i64::MIN {
+            self.wake = self.horizon();
+        }
+        self.unsettled = self.port.is_some();
     }
 
     /// A device stretches the current cycle (RDY low); applied when the access returns.
     pub fn hold(&mut self, clocks: i64) {
         self.held += clocks;
+        self.touch();
     }
 
     // -- time -------------------------------------------------------------------------------------
@@ -441,13 +505,27 @@ impl Board {
     /// Let `clocks` master clocks pass and run every device up to the new time, with no CPU
     /// to hand the interrupt lines to (the reference's `advance` on a board without one).
     pub fn advance(&mut self, clocks: i64) {
+        self.touch();
         self.advance_with(clocks, None);
     }
 
+    /// The fork's shortcut: a cycle that ends before the event horizon (`wake`) moves the
+    /// clock and nothing else. The base board runs `run_to` and `deliver_lines` every cycle;
+    /// before the horizon both find nothing to do (`horizon` says why).
+    #[inline(always)]
     fn advance_with(&mut self, clocks: i64, pins: Option<&mut Pins>) {
         self.mclk += clocks;
+        if self.mclk < self.wake {
+            return;
+        }
+        self.advance_events(pins);
+    }
+
+    #[inline(never)]
+    fn advance_events(&mut self, pins: Option<&mut Pins>) {
         self.run_to(self.mclk);
         self.deliver_lines(pins, false);
+        self.wake = self.horizon();
     }
 
     fn run_to(&mut self, target: i64) {
@@ -562,6 +640,7 @@ impl Board {
     // -- reset ------------------------------------------------------------------------------------
 
     pub fn reset(&mut self, kind: ResetKind) {
+        self.touch();
         let Board {
             slot,
             port,
@@ -611,8 +690,13 @@ impl Bus for Board {
         self.opcode = pins.opcode();
         let cycle = Board::cycle_clocks(pins);
         self.advance_with(cycle, Some(pins));
-        let value = self.page_read(address, self.mclk);
-        self.finish_access(address, cycle, pins);
+        let value = if self.quiet_page(address) {
+            self.ram.read(address & ADDRESS_MASK)
+        } else {
+            let value = self.page_read(address, self.mclk);
+            self.finish_access(address, cycle, pins);
+            value
+        };
         if let Some(log) = self.bus_log.as_mut() {
             log.push((address as u64) << 8 | value as u64);
             log.push((self.mclk as u64) << 2);
@@ -627,8 +711,12 @@ impl Bus for Board {
         self.opcode = pins.opcode();
         let cycle = Board::cycle_clocks(pins);
         self.advance_with(cycle, Some(pins));
-        self.page_write(address, value, self.mclk);
-        self.finish_access(address, cycle, pins);
+        if self.quiet_page(address) {
+            self.ram.write(address & ADDRESS_MASK, value);
+        } else {
+            self.page_write(address, value, self.mclk);
+            self.finish_access(address, cycle, pins);
+        }
         if let Some(log) = self.bus_log.as_mut() {
             log.push((address as u64) << 8 | value as u64);
             log.push((self.mclk as u64) << 2 | 1);

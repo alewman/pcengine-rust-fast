@@ -90,6 +90,17 @@ impl Timer {
         Some(self.next_tick + self.count as i64 * TICK_CLOCKS)
     }
 
+    /// The fork's: the master clock of the next tick of any kind (`catch_up` has nothing to
+    /// do before it), or None while disabled.
+    #[inline]
+    pub(crate) fn next_tick(&self) -> Option<i64> {
+        if self.enabled {
+            Some(self.next_tick)
+        } else {
+            None
+        }
+    }
+
     pub fn read(&mut self, buffer: u8, mclk: i64) -> u8 {
         self.catch_up(mclk);
         // Bit 7 returns the I/O buffer; the low seven bits are the live count.

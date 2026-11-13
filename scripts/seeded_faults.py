@@ -18,12 +18,13 @@ The reference's traces come from the cache a full gate run left (``--reference-c
 fault costs a build and the Rust side of the cases. A fault no check catches is reported as
 MISSED.
 
-    seeded_faults.py [--cache DIR] [--only NAME] [--jobs N] [--list]
+    seeded_faults.py [--cache DIR] [--only REGEX] [--jobs N] [--list] [--check]
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -331,6 +332,31 @@ FAULTS = {
         "self.next_u32() & (u32::MAX >> (32 - k))",
         "a seeded power-on takes the low bits of each random word",
     ),
+    # the fork's own shortcuts (the base board has none of these lines)
+    "horizon-waits-for-the-underflow": (
+        "board.rs",
+        "if let Some(tick_at) = self.cpu_io.timer.next_tick() {",
+        "if let Some(tick_at) = self.cpu_io.timer.next_event() {",
+        "the event horizon stops for the timer's underflow only, so the count is behind the clock between",
+    ),
+    "horizon-sleeps-through-a-dma": (
+        "board.rs",
+        "            if vdc.dma.running {\n                return i64::MIN;\n            }\n",
+        "",
+        "the event horizon does not stop for a running VRAM DMA: its words move late",
+    ),
+    "access-keeps-the-old-horizon": (
+        "board.rs",
+        "        self.wake = i64::MIN;\n        if self.held != 0 {",
+        "        if self.held != 0 {",
+        "what an access schedules (a VRAM commit, the timer's start) is not in the event horizon",
+    ),
+    "ram-access-ignores-a-waiting-hold": (
+        "board.rs",
+        "== Handler::Ram && !self.unsettled",
+        "== Handler::Ram",
+        "a work RAM access never finishes in full: a hold left from outside waits for another page",
+    ),
 }
 
 LOCKSTEP = [
@@ -351,7 +377,17 @@ def main() -> int:
     parser.add_argument("--only")
     parser.add_argument("--jobs", type=int, default=12)
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--check", action="store_true", help="only check that every fault's text is there once")
     args = parser.parse_args()
+    if args.check:
+        bad = 0
+        for name, (file, old, _, _) in FAULTS.items():
+            count = (ROOT / "src" / file).read_text().count(old)
+            if count != 1:
+                print(f"{name}: the fault's text is in {file} {count} times, not once")
+                bad += 1
+        print(f"{len(FAULTS) - bad} of {len(FAULTS)} faults apply")
+        return 1 if bad else 0
     if args.list:
         for name, (file, _, _, what) in FAULTS.items():
             print(f"{name}\t{file}\t{what}")
@@ -360,7 +396,7 @@ def main() -> int:
     tree = args.work / "tree"
     target = args.work / "target"
     for name, (file, old, new, _) in FAULTS.items():
-        if args.only and name != args.only:
+        if args.only and not re.fullmatch(args.only, name):
             continue
         ran += 1
         for part in ("src", "tests"):

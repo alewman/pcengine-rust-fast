@@ -37,6 +37,8 @@ impl System {
 
     #[inline]
     pub fn board_mut(&mut self) -> &mut Board {
+        // the fork: whatever the caller changes, the event horizon is recomputed
+        self.cpu.bus.touch();
         &mut self.cpu.bus
     }
 
@@ -46,11 +48,13 @@ impl System {
     }
 
     pub fn step(&mut self) {
+        self.cpu.bus.touch();
         self.cpu.step();
     }
 
     /// Run until the VCE starts the next frame.
     pub fn run_frame(&mut self) {
+        self.cpu.bus.touch();
         let start = self.frame();
         while self.frame() == start {
             self.cpu.step();
@@ -59,6 +63,7 @@ impl System {
 
     /// Run whole instructions until the master clock has reached `mclk`.
     pub fn run_until(&mut self, mclk: i64) {
+        self.cpu.bus.touch();
         while self.cpu.bus.mclk < mclk {
             self.cpu.step();
         }
