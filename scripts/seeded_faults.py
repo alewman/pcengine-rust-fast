@@ -375,6 +375,18 @@ FAULTS = {
         "        let split = &row[..0];\n        {\n",
         "the capture's quick row is taken with palette writes inside the row: they show from the next row",
     ),
+    "tile-line-mirrored": (
+        "vdc/background.rs",
+        "table[byte] |= 1 << (4 * x);",
+        "table[byte] |= 1 << (4 * (7 - x));",
+        "the bitplane table puts a tile line's (and a sprite row's) pixels in the other order",
+    ),
+    "background-fine-scroll-dropped": (
+        "vdc/background.rs",
+        "let mut pixels = pixels >> (4 * skip);",
+        "let mut pixels = pixels;",
+        "the first tile of a background row is drawn from its left edge whatever BXR's low bits",
+    ),
 }
 
 LOCKSTEP = [

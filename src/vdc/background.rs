@@ -11,21 +11,31 @@
 //! dots earlier, as Mednafen does (tier 5, U3); a VRAM change during the line shows on the next one.
 //!
 //! Differences forced by Rust: none in behaviour. The reference's per-instance decode cache (a
-//! dict that only saves PyPy time) is not carried over; the eight pixels are decoded each time.
+//! dict that only saves PyPy time) is not carried over; the eight pixels are decoded each time
+//! (the fork: from a table, a bitplane byte at a time, into the row itself).
 
 pub const BAT_WIDTHS: [usize; 4] = [32, 64, 128, 128]; // MWR D5-D4 [hw: pcetech 5.1 $09]
 pub const BAT_SHIFTS: [u32; 4] = [5, 6, 7, 7];
 pub const BAT_HEIGHTS: [i64; 2] = [32, 64]; // MWR D6
 
-#[inline]
-fn decode(w0: u16, w1: u16, mask: u16, x: u32) -> u16 {
-    let bit = 7 - x;
-    (((w0 >> bit) & 1)
-        | (((w0 >> (8 + bit)) & 1) << 1)
-        | (((w1 >> bit) & 1) << 2)
-        | (((w1 >> (8 + bit)) & 1) << 3))
-        & mask
-}
+/// The fork: one bitplane byte of a tile line as eight nibbles, bit `7 - x` of the byte at bit
+/// `4 * x`, so the four planes of a line OR into its eight pixels at once (the base board
+/// shifts each pixel's four bits out one at a time).
+const SPREAD: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut byte = 0;
+    while byte < 256 {
+        let mut x = 0;
+        while x < 8 {
+            if (byte >> (7 - x)) & 1 != 0 {
+                table[byte] |= 1 << (4 * x);
+            }
+            x += 1;
+        }
+        byte += 1;
+    }
+    table
+};
 
 /// `width` pixels, each `palette << 4 | colour`; colour 0 is transparent.
 pub fn row(
@@ -36,6 +46,20 @@ pub fn row(
     y_offset: i64,
     width: i64,
 ) -> Vec<u16> {
+    let mut out = vec![0; width.max(0) as usize];
+    row_into(vram, size, mwr, x_offset, y_offset, &mut out);
+    out
+}
+
+/// `row`, drawn into `out` (its length is the width).
+pub fn row_into(
+    vram: &[u16],
+    size: usize,
+    mwr: u16,
+    x_offset: i64,
+    y_offset: i64,
+    out: &mut [u16],
+) {
     let shape = ((mwr >> 4) & 3) as usize;
     let bat_mask = BAT_WIDTHS[shape] - 1;
     let bat_row = (((y_offset >> 3) & (BAT_HEIGHTS[((mwr >> 6) & 1) as usize] - 1)) as usize)
@@ -47,22 +71,29 @@ pub fn row(
     if mwr & 3 == 3 {
         mask = if mwr & 0x80 != 0 { 0x0C } else { 0x03 };
     }
-    let width = width.max(0) as usize;
-    let mut out: Vec<u16> = Vec::with_capacity(width + 8);
+    let planes = mask * 0x1111_1111u32; // the mask on every pixel of a tile line
     let mut skip = (x_offset & 7) as u32;
     let mut column = ((x_offset >> 3) as usize) & bat_mask;
-    while out.len() < width {
+    let mut at = 0;
+    while at < out.len() {
         let bat = vram[bat_row | column];
         let base = (bat & 0xFFF) as usize * 16 + line;
         let w0 = if base < size { vram[base] } else { 0 };
         let w1 = if base + 8 < size { vram[base + 8] } else { 0 };
         let palette = (bat >> 8) & 0xF0;
-        for x in skip..8 {
-            out.push(palette | decode(w0, w1, mask, x));
+        let pixels = (SPREAD[(w0 & 0xFF) as usize]
+            | (SPREAD[(w0 >> 8) as usize] << 1)
+            | (SPREAD[(w1 & 0xFF) as usize] << 2)
+            | (SPREAD[(w1 >> 8) as usize] << 3))
+            & planes;
+        let mut pixels = pixels >> (4 * skip);
+        let take = ((8 - skip) as usize).min(out.len() - at);
+        for slot in &mut out[at..at + take] {
+            *slot = palette | (pixels & 0x0F) as u16;
+            pixels >>= 4;
         }
+        at += take;
         skip = 0;
         column = (column + 1) & bat_mask;
     }
-    out.truncate(width);
-    out
 }

@@ -298,23 +298,25 @@ impl Vdc {
             self.row = Some(row);
             return;
         }
-        let pixels = if cr & 0x80 != 0 {
-            background::row(
+        let (first_index, end_index) = (first as usize, end as usize);
+        // The fork: drawn into the row itself (the base board draws the whole width apart and
+        // copies what fits).
+        let shown = &mut row[first_index..end_index];
+        if cr & 0x80 != 0 {
+            background::row_into(
                 &self.vram,
                 VRAM_WORDS,
                 self.mwr_cache,
                 self.bg_x_offset,
                 self.bg_y_offset,
-                width,
-            )
+                shown,
+            );
         } else {
             // sprites only, or neither layer inside a non-burst display period: the backdrop.
             // [emu: Mednafen, Mesen2 and Beetle all show colour 0 of the background palette when
             // both layers are off (Space Harrier's last 12 lines); pcetech 5.2 says overscan: C30]
-            vec![0x000; width as usize]
-        };
-        let (first_index, end_index) = (first as usize, end as usize);
-        row[first_index..end_index].copy_from_slice(&pixels[..end_index - first_index]);
+            shown.fill(0x000);
+        }
         let mut collision = None;
         if cr & 0x40 != 0 && !self.sprite_entries.is_empty() {
             let hit = sprites::draw(&self.sprite_entries, end - first, &mut row, first_index);
