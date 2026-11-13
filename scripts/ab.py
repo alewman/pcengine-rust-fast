@@ -70,8 +70,9 @@ def main() -> int:
     parser.add_argument("--frames", type=int, default=600)
     parser.add_argument("--cpu", type=int, default=31)
     parser.add_argument("--only")
+    parser.add_argument("--extra", default="", help="more pce-bench arguments for every title (--device lockstep-port)")
     args = parser.parse_args()
-    titles = [t for t in TITLES if not args.only or re.search(args.only, t[0])]
+    titles = [(n, a, [*x, *args.extra.split()]) for n, a, x in TITLES if not args.only or re.search(args.only, n)]
     if args.fps or args.b is None:
         for name, archive, extra in titles:
             card = image(name, archive)

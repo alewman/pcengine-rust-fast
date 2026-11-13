@@ -6,6 +6,7 @@ use huc6280::{Bus, Pins};
 use pcengine_rust::board::{Board, BoardOptions};
 use pcengine_rust::cards::RomCard;
 use pcengine_rust::pads::Pad2;
+use pcengine_rust::sockets::{BoardPins, DeviceState, PageHandler, PortDevice, ResetKind};
 use pcengine_rust::system::System;
 
 /// A card that sets up a display, starts the timer and a VRAM-to-VRAM DMA (which the display
@@ -111,4 +112,79 @@ fn a_hold_from_outside_stretches_the_next_ram_access() {
     let before = board.mclk;
     board.write(work_ram, 0x55, &mut pins);
     assert_eq!(board.mclk - before, cycle); // applied once
+}
+
+/// A port device that drives the VDC by itself: at a given master clock its `catch_up` starts
+/// a VRAM-to-VRAM DMA through the pins (no real device does; the socket allows it).
+struct Meddler {
+    at: i64,
+    done: bool,
+}
+
+impl DeviceState for Meddler {}
+
+impl PageHandler for Meddler {
+    fn read(&mut self, _address: u32, _mclk: i64, _pins: &mut BoardPins) -> u8 {
+        0xFF
+    }
+
+    fn write(&mut self, _address: u32, _value: u8, _mclk: i64, _pins: &mut BoardPins) {}
+}
+
+impl PortDevice for Meddler {
+    fn present(&self) -> bool {
+        true
+    }
+
+    fn claims(&self) -> Vec<(usize, usize)> {
+        Vec::new()
+    }
+
+    fn catch_up(&mut self, mclk: i64, pins: &mut BoardPins) {
+        if mclk >= self.at && !self.done {
+            self.done = true;
+            let vdc = &mut pins.vdcs[0];
+            for (register, low, high) in
+                [(0x10, 0x00, 0x10), (0x11, 0x00, 0x20), (0x12, 0x00, 0x20)]
+            {
+                vdc.write(0, register, mclk);
+                vdc.write(2, low, mclk);
+                vdc.write(3, high, mclk);
+            }
+        }
+    }
+
+    fn reset(&mut self, _kind: ResetKind, _pins: &mut BoardPins) {}
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[test]
+fn a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon() {
+    // Cycle by cycle, on a bare board (idle cycles: no access recomputes the horizon).
+    let mut board = Board::new(BoardOptions {
+        port: Some(Box::new(Meddler {
+            at: 100_000,
+            done: false,
+        })),
+        ..BoardOptions::default()
+    })
+    .unwrap();
+    let mut pins = Pins::default();
+    let mut moved = 0;
+    for cycle in 0..20_000 {
+        board.idle(None, &mut pins);
+        let vdc = &board.vdcs[0];
+        let mut eager = vdc.clone();
+        eager.catch_up(board.mclk);
+        assert!(
+            eager == *vdc,
+            "cycle {cycle}: the VDC is behind the clock {}",
+            board.mclk
+        );
+        moved += (vdc.dma.running && vdc.regs.value[0x12] != 0x2000) as u32;
+    }
+    assert!(moved > 0, "the transfer the port device started never ran");
 }

@@ -347,7 +347,7 @@ FAULTS = {
     ),
     "access-keeps-the-old-horizon": (
         "board.rs",
-        "        self.wake = i64::MIN;\n        if self.held != 0 {",
+        "        self.wake = i64::MIN;\n        self.events_at = i64::MIN;\n        if self.held != 0 {",
         "        if self.held != 0 {",
         "what an access schedules (a VRAM commit, the timer's start) is not in the event horizon",
     ),
@@ -410,6 +410,12 @@ FAULTS = {
         "        seq.events.clear();\n",
         "",
         "a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites",
+    ),
+    "port-catch-up-keeps-the-old-horizon": (
+        "board.rs",
+        "        self.deliver_lines(pins, false);\n        self.look_ahead();\n",
+        "        self.deliver_lines(pins, false);\n        if self.mclk >= self.events_at {\n            self.look_ahead();\n        }\n",
+        "what a port device's `catch_up` does to a VDC is not in the event horizon",
     ),
 }
 

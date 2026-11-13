@@ -132,6 +132,9 @@ pub struct Board {
     /// it is not known (`touch`), which sends the next cycle through `run_to` as the base
     /// board does every cycle.
     pub(crate) wake: i64,
+    /// The horizon proper (`horizon`): `wake` is this, or "every cycle" with a device on the
+    /// expansion port, whose `catch_up` is then all a cycle before `events_at` runs.
+    pub(crate) events_at: i64,
     /// Something outside a bus access may have left a hold or a line for the next access to
     /// apply (the host through `board_mut()`, a port device's `catch_up`): the next access
     /// finishes in full, whatever its page.
@@ -219,6 +222,7 @@ impl Board {
             bus_log: None,
             bus_detail: None,
             wake: i64::MIN,
+            events_at: i64::MIN,
             unsettled: true,
             plain_card: false,
             direct_path: false,
@@ -247,6 +251,7 @@ impl Board {
     #[inline]
     pub fn touch(&mut self) {
         self.wake = i64::MIN;
+        self.events_at = i64::MIN;
         self.unsettled = true;
         self.plain_card = self.card_is_plain();
         self.direct_path = self.pixel_path.as_any_mut().is::<DirectPath>();
@@ -266,15 +271,12 @@ impl Board {
         })
     }
 
-    /// The earliest master clock at which `run_to` has anything to do: the next line, the end
-    /// of the row being drawn, each VDC's next event, the timer's next tick (every tick, not
-    /// only the underflow: the count is state). `i64::MIN` (every cycle) while a VRAM DMA runs
-    /// or waits, which moves words or its own clock at every catch-up, and with a device on
-    /// the expansion port, which is promised a `catch_up` at every advance (socket 5).
+    /// The earliest master clock at which `run_to` has anything to do but the port device's
+    /// `catch_up`: the next line, the end of the row being drawn, each VDC's next event, the
+    /// timer's next tick (every tick, not only the underflow: the count is state).
+    /// `i64::MIN` (every cycle) while a VRAM DMA runs or waits, which moves words or its own
+    /// clock at every catch-up.
     fn horizon(&self) -> i64 {
-        if self.port.is_some() {
-            return i64::MIN;
-        }
         let mut at = self.timeline.next_line_start();
         if let Some(row_at) = self.row_end {
             at = at.min(row_at);
@@ -291,6 +293,18 @@ impl Board {
             at = at.min(tick_at);
         }
         at
+    }
+
+    /// Recompute the horizon. A device on the expansion port is promised a `catch_up` at
+    /// every advance (socket 5), so with one every cycle wakes.
+    #[inline]
+    fn look_ahead(&mut self) {
+        self.events_at = self.horizon();
+        self.wake = if self.port.is_some() {
+            i64::MIN
+        } else {
+            self.events_at
+        };
     }
 
     /// Mixed stereo samples (44.1 kHz) of every audio source up to the clock now.
@@ -539,14 +553,15 @@ impl Board {
         }
         // The fork: the access may have scheduled something (a VRAM commit, the timer's start).
         self.wake = i64::MIN;
+        self.events_at = i64::MIN;
         if self.held != 0 {
             let held = std::mem::take(&mut self.held);
             self.advance_with(held, Some(&mut *pins));
         }
         // the access itself (a status read) may have changed a line
         self.deliver_lines(Some(pins), false);
-        if self.wake == i64::MIN {
-            self.wake = self.horizon();
+        if self.events_at == i64::MIN {
+            self.look_ahead();
         }
         self.unsettled = self.port.is_some();
     }
@@ -580,9 +595,15 @@ impl Board {
 
     #[inline(never)]
     fn advance_events(&mut self, pins: Option<&mut Pins>) {
-        self.run_to(self.mclk);
+        if self.mclk < self.events_at {
+            // Only with a port device: nothing is due but its `catch_up`, which may raise
+            // IRQ2, hold the CPU or reach a VDC, so the lines and the horizon follow.
+            self.port_catch_up(self.mclk);
+        } else {
+            self.run_to(self.mclk);
+        }
         self.deliver_lines(pins, false);
-        self.wake = self.horizon();
+        self.look_ahead();
     }
 
     fn run_to(&mut self, target: i64) {
@@ -616,7 +637,11 @@ impl Board {
             chip.catch_up(target);
         }
         self.cpu_io.catch_up(target);
-        // socket 5, issue 0002: a port device acts by itself
+        self.port_catch_up(target);
+    }
+
+    /// socket 5, issue 0002: a port device acts by itself
+    fn port_catch_up(&mut self, target: i64) {
         let Board {
             slot,
             port,
