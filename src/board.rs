@@ -780,76 +780,160 @@ impl Board {
     }
 }
 
-impl Bus for Board {
-    fn read(&mut self, address: u32, pins: &mut Pins) -> u8 {
-        self.opcode = pins.opcode();
-        let cycle = Board::cycle_clocks(pins);
-        self.advance_with(cycle, Some(pins));
+// The fork: each callback is a short quiet case (the cycle ends before the event horizon and
+// the access, if any, is work RAM's or a plain card's) that keeps no register across a call,
+// and the rest out of line (`*_in_full`), which is the base board's callback.
+impl Board {
+    /// The gate's taps are on.
+    #[inline(always)]
+    fn tapped(&self) -> bool {
+        self.bus_log.is_some() | self.bus_detail.is_some()
+    }
+
+    /// `kind` 0 read, 1 write, 2 idle (address and value 0, and not in the log's first word).
+    #[cold]
+    #[inline(never)]
+    fn tap(&mut self, kind: u8, address: u32, value: u8) -> u8 {
+        if let Some(log) = self.bus_log.as_mut() {
+            if kind != 2 {
+                log.push((address as u64) << 8 | value as u64);
+            }
+            log.push((self.mclk as u64) << 2 | kind as u64);
+        }
+        if let Some(detail) = self.bus_detail.as_mut() {
+            detail.push((kind, address, value, self.mclk));
+        }
+        value
+    }
+
+    #[inline(never)]
+    fn quiet_card_read(&mut self, address: u32) -> u8 {
+        let mclk = self.mclk;
+        let (card, mut pins) = self.card_pins();
+        let value = match card {
+            Some(card) => card.read(address & ADDRESS_MASK, mclk, &mut pins),
+            None => 0xFF,
+        };
+        if self.tapped() {
+            self.tap(0, address, value);
+        }
+        value
+    }
+
+    #[inline(never)]
+    fn quiet_card_write(&mut self, address: u32, value: u8) {
+        let mclk = self.mclk;
+        let (card, mut pins) = self.card_pins();
+        if let Some(card) = card {
+            card.write(address & ADDRESS_MASK, value, mclk, &mut pins);
+        }
+        if self.tapped() {
+            self.tap(1, address, value);
+        }
+    }
+
+    /// The clock has moved by `cycle` already.
+    #[inline(never)]
+    fn read_in_full(&mut self, address: u32, cycle: i64, pins: &mut Pins) -> u8 {
+        if self.mclk >= self.wake {
+            self.advance_events(Some(pins));
+        }
         let address_in = address & ADDRESS_MASK;
         let value = match self.quiet_page(address_in) {
             Some(Handler::Ram) => self.ram.read(address_in),
-            Some(_) => {
-                let mclk = self.mclk;
-                let (card, mut pins) = self.card_pins();
-                match card {
-                    Some(card) => card.read(address_in, mclk, &mut pins),
-                    None => 0xFF,
-                }
-            }
+            Some(_) => return self.quiet_card_read(address),
             None => {
                 let value = self.page_read(address, self.mclk);
                 self.finish_access(address, cycle, pins);
                 value
             }
         };
-        if let Some(log) = self.bus_log.as_mut() {
-            log.push((address as u64) << 8 | value as u64);
-            log.push((self.mclk as u64) << 2);
-        }
-        if let Some(detail) = self.bus_detail.as_mut() {
-            detail.push((0, address, value, self.mclk));
+        if self.tapped() {
+            self.tap(0, address, value);
         }
         value
     }
 
-    fn write(&mut self, address: u32, value: u8, pins: &mut Pins) {
-        self.opcode = pins.opcode();
-        let cycle = Board::cycle_clocks(pins);
-        self.advance_with(cycle, Some(pins));
+    #[inline(never)]
+    fn write_in_full(&mut self, address: u32, value: u8, cycle: i64, pins: &mut Pins) {
+        if self.mclk >= self.wake {
+            self.advance_events(Some(pins));
+        }
         let address_in = address & ADDRESS_MASK;
         match self.quiet_page(address_in) {
             Some(Handler::Ram) => self.ram.write(address_in, value),
-            Some(_) => {
-                let mclk = self.mclk;
-                let (card, mut pins) = self.card_pins();
-                if let Some(card) = card {
-                    card.write(address_in, value, mclk, &mut pins);
-                }
-            }
+            Some(_) => return self.quiet_card_write(address, value),
             None => {
                 self.page_write(address, value, self.mclk);
                 self.finish_access(address, cycle, pins);
             }
         }
-        if let Some(log) = self.bus_log.as_mut() {
-            log.push((address as u64) << 8 | value as u64);
-            log.push((self.mclk as u64) << 2 | 1);
+        if self.tapped() {
+            self.tap(1, address, value);
         }
-        if let Some(detail) = self.bus_detail.as_mut() {
-            detail.push((1, address, value, self.mclk));
+    }
+
+    #[inline(never)]
+    fn idle_in_full(&mut self, pins: &mut Pins) {
+        if self.mclk >= self.wake {
+            self.advance_events(Some(pins));
         }
+        if self.tapped() {
+            self.tap(2, 0, 0);
+        }
+    }
+}
+
+impl Bus for Board {
+    fn read(&mut self, address: u32, pins: &mut Pins) -> u8 {
+        self.opcode = pins.opcode();
+        let cycle = Board::cycle_clocks(pins);
+        self.mclk += cycle;
+        if self.mclk < self.wake {
+            let address_in = address & ADDRESS_MASK;
+            match self.quiet_page(address_in) {
+                Some(Handler::Ram) => {
+                    let value = self.ram.read(address_in);
+                    if self.tapped() {
+                        return self.tap(0, address, value);
+                    }
+                    return value;
+                }
+                Some(_) => return self.quiet_card_read(address),
+                None => {}
+            }
+        }
+        self.read_in_full(address, cycle, pins)
+    }
+
+    fn write(&mut self, address: u32, value: u8, pins: &mut Pins) {
+        self.opcode = pins.opcode();
+        let cycle = Board::cycle_clocks(pins);
+        self.mclk += cycle;
+        if self.mclk < self.wake {
+            let address_in = address & ADDRESS_MASK;
+            match self.quiet_page(address_in) {
+                Some(Handler::Ram) => {
+                    self.ram.write(address_in, value);
+                    if self.tapped() {
+                        self.tap(1, address, value);
+                    }
+                    return;
+                }
+                Some(_) => return self.quiet_card_write(address, value),
+                None => {}
+            }
+        }
+        self.write_in_full(address, value, cycle, pins)
     }
 
     /// A cycle with no bus transfer (internal cycle or dummy read: nothing reacts).
     fn idle(&mut self, _address: Option<u32>, pins: &mut Pins) {
         self.opcode = pins.opcode();
-        let cycle = Board::cycle_clocks(pins);
-        self.advance_with(cycle, Some(pins));
-        if let Some(log) = self.bus_log.as_mut() {
-            log.push((self.mclk as u64) << 2 | 2);
+        self.mclk += Board::cycle_clocks(pins);
+        if self.mclk < self.wake && !self.tapped() {
+            return;
         }
-        if let Some(detail) = self.bus_detail.as_mut() {
-            detail.push((2, 0, 0, self.mclk));
-        }
+        self.idle_in_full(pins)
     }
 }

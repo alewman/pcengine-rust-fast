@@ -417,6 +417,18 @@ FAULTS = {
         "        self.deliver_lines(pins, false);\n        if self.mclk >= self.events_at {\n            self.look_ahead();\n        }\n",
         "what a port device's `catch_up` does to a VDC is not in the event horizon",
     ),
+    "quiet-idle-cycle-not-tapped": (
+        "board.rs",
+        "if self.mclk < self.wake && !self.tapped() {",
+        "if self.mclk < self.wake {",
+        "an idle cycle before the event horizon is left out of the bus log",
+    ),
+    "full-read-skips-the-events": (
+        "board.rs",
+        "        if self.mclk >= self.wake {\n            self.advance_events(Some(pins));\n        }\n        let address_in = address & ADDRESS_MASK;\n        let value = match",
+        "        let address_in = address & ADDRESS_MASK;\n        let value = match",
+        "a read cycle that reaches the event horizon does not run the events",
+    ),
 }
 
 LOCKSTEP = [
