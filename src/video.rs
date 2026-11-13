@@ -143,7 +143,21 @@ impl Capture {
         let mut colours = Vec::with_capacity(row.len());
         let mut pending = 0;
         let shadow = &mut self.shadow;
-        for (x, &pixel) in row.iter().enumerate() {
+        // The fork: with no palette write inside the row, which is nearly every line, the
+        // colour table is the same at every dot and no dot's time is needed.
+        let split = if used == 0 { &row[..0] } else { row };
+        if used == 0 {
+            colours.extend(row.iter().map(|&pixel| {
+                // colour 0 of every palette shows the backdrop/overscan entry
+                let entry = if pixel & 0x0F == 0 {
+                    pixel & 0x100
+                } else {
+                    pixel
+                };
+                shadow[entry as usize]
+            }));
+        }
+        for (x, &pixel) in split.iter().enumerate() {
             let when = first + x as i64 * div;
             while pending < used && log[pending].0 <= when {
                 shadow[log[pending].1 as usize] = log[pending].2;

@@ -369,6 +369,12 @@ FAULTS = {
         "if (address >> PAGE_BITS) as usize >= HARDWARE_FIRST_PAGE {",
         "a work RAM or card access is cut short with a hold from outside waiting",
     ),
+    "palette-write-waits-for-the-row-end": (
+        "video.rs",
+        "        let split = if used == 0 { &row[..0] } else { row };\n        if used == 0 {\n",
+        "        let split = &row[..0];\n        {\n",
+        "the capture's quick row is taken with palette writes inside the row: they show from the next row",
+    ),
 }
 
 LOCKSTEP = [
