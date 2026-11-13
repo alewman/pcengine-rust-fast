@@ -626,7 +626,7 @@ impl Board {
         if self.events_at == i64::MIN {
             self.look_ahead();
         }
-        self.unsettled = self.port.is_some();
+        self.unsettled = false;
     }
 
     /// A device stretches the current cycle (RDY low); applied when the access returns.
@@ -726,6 +726,11 @@ impl Board {
                 card: slot.card.as_deref_mut(),
             };
             port.catch_up(target, &mut pins);
+            // The fork: a hold it left (its own, or a VDC's from an access it made) is for
+            // the next access to apply, whatever its page.
+            if *held != 0 || vdcs.iter().any(|vdc| vdc.holding()) {
+                self.unsettled = true;
+            }
         }
     }
 

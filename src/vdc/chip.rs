@@ -122,6 +122,12 @@ impl Vdc {
         std::mem::take(&mut self.held)
     }
 
+    /// The fork: a hold is waiting for `take_hold`.
+    #[inline]
+    pub(crate) fn holding(&self) -> bool {
+        self.held != 0
+    }
+
     fn hold(&mut self, clocks: i64) {
         self.held += clocks;
     }

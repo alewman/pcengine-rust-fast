@@ -447,6 +447,12 @@ FAULTS = {
         "*offset = (bank * BANK / 2) as u32;",
         "the board reads a lent image's banks from the wrong place",
     ),
+    "hold-from-catch-up-waits": (
+        "board.rs",
+        "            if *held != 0 || vdcs.iter().any(|vdc| vdc.holding()) {\n                self.unsettled = true;\n            }\n",
+        "",
+        "a hold a port device leaves from `catch_up` is not applied by a work RAM or plain card access",
+    ),
 }
 
 LOCKSTEP = [

@@ -289,3 +289,64 @@ fn a_rom_card_has_its_image_whenever_a_port_device_looks() {
     let reader = port.as_any_mut().downcast_mut::<Reader>().unwrap();
     assert!(reader.looked > 10_000);
 }
+
+/// A port device that holds the CPU once, from `catch_up`.
+struct Holder {
+    at: i64,
+    done: bool,
+}
+
+impl DeviceState for Holder {}
+
+impl PageHandler for Holder {
+    fn read(&mut self, _address: u32, _mclk: i64, _pins: &mut BoardPins) -> u8 {
+        0xFF
+    }
+
+    fn write(&mut self, _address: u32, _value: u8, _mclk: i64, _pins: &mut BoardPins) {}
+}
+
+impl PortDevice for Holder {
+    fn present(&self) -> bool {
+        true
+    }
+
+    fn claims(&self) -> Vec<(usize, usize)> {
+        Vec::new()
+    }
+
+    fn catch_up(&mut self, mclk: i64, pins: &mut BoardPins) {
+        if mclk >= self.at && !self.done {
+            self.done = true;
+            pins.hold(5);
+        }
+    }
+
+    fn reset(&mut self, _kind: ResetKind, _pins: &mut BoardPins) {}
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[test]
+fn a_hold_from_a_port_devices_catch_up_stretches_that_ram_access() {
+    let mut board = Board::new(BoardOptions {
+        port: Some(Box::new(Holder {
+            at: 1000,
+            done: false,
+        })),
+        ..BoardOptions::default()
+    })
+    .unwrap();
+    let mut pins = Pins::default();
+    let mut cycles = Vec::new();
+    for _ in 0..200 {
+        let before = board.mclk;
+        board.read(0xF8 << 13, &mut pins);
+        cycles.push((before, board.mclk - before));
+    }
+    // 12 master clocks a cycle, and 17 for the one in which the device asked
+    let long: Vec<_> = cycles.iter().filter(|&&(_, clocks)| clocks != 12).collect();
+    assert_eq!(long, [&(996, 17)]);
+}
