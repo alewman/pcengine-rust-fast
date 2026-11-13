@@ -16,5 +16,9 @@ fn main() {
     let frames = args.last().unwrap().parse().expect("FRAMES");
     let mut run = pce_wasm_bench::Run::new(&image, tg16);
     run.run(frames);
-    println!("output {:08X}, check {:08X}", run.output_check(), run.check());
+    println!(
+        "output {:08X}, check {:08X}",
+        run.output_check(),
+        run.check()
+    );
 }

@@ -67,3 +67,15 @@ report frames per second there before and after. Check the PSG's `powf` level ta
   the gate's final result, and confirmation that the public API is unchanged (the add-on crates
   build against this crate: try `cargo build` of `/data/emu/supergrafx-rust` with a temporary
   `--config 'patch...'` or a scratch copy, without editing that repository).
+
+## What was built
+
+(2026-11-12) The fork as asked: package `pcengine-rust-fast`, crate `pcengine_rust`, the public
+API unchanged but for three added functions (`Board::touch`, `background::row_into`,
+`sprites::scan_into`). Eleven kept changes, one commit each with its measured factor; x4.3
+natively and x4.0 under wasm against the fork point, measured directly; four attempts not
+kept (docs/not-kept.md); 68 seeded faults caught (the inherited 48 and 20 on the fork's own
+shortcuts); the gate green on every commit's tree. The README has the tables, the profile
+before and after, what a host must know (`touch`, the lent ROM image, LTO) and the PSG
+level-table finding under wasm. The CPU core is now the largest share of a frame (about 32%)
+and was not edited. Not pushed; no GitHub repository.

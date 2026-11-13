@@ -1,48 +1,212 @@
-# pcengine-rust
+# pcengine-rust-fast
 
-A Rust PC Engine / TurboGrafx-16 board transcribed from
-[pcengine-python](https://github.com/alewman/pcengine-python) at `v0.1.0`
-and proven equivalent to it: every CPU bus cycle (physical address, value,
-kind, master clock), every frame's picture at the 9-bit palette value, every
-mixed audio sample and the CPU's state, frame by frame, on the whole HuCard
-library. pcengine-python is the specification (readable, cited, judged
-against Mesen2, Beetle PCE, Mednafen and Covell's photographs); this board
-adds nothing and tunes nothing. It is the base for the speed fork and for
-the add-on crates (`supergrafx-rust`, `pcenginecd-rust`), which plug into
-its socket traits.
+The speed fork of pcengine-rust, the Rust PC Engine / TurboGrafx-16 board (itself
+transcribed from, and proven equivalent to,
+[pcengine-python](https://github.com/alewman/pcengine-python) `v0.1.0`), forked at `49e3d48`
+and **held in lockstep with it**: every change must leave this board's traces identical to
+the base board's on every case (and so to the reference's), and must measure faster, or it is
+not kept. The base board is the readable one; this one is for players, and above all for the
+wasm build on modest hardware.
 
-The board is the reference's, module for module, with the same names, every
-named switch as a field with the reference's default, and the comments that
-cite a source carried over: the machine table (PC Engine, TurboGrafx-16; a
-row may ask for more VDCs and more RAM), the one timeline in master clocks
-with the bus callbacks that price each cycle, the 8192-page decode, the
-hardware page, the timer, the interrupt registers, the I/O port and its
-buffer, the 2-button and 6-button pads and the multitap, the VCE, the frame
-timeline and the line capture, the VDC (registers, bus port, the sequencer,
-background, sprites, both DMAs), the six-channel PSG, the mixer, the cards
-(ROM with mirroring, Street Fighter II', Populous, Tennokoe), the sockets as
-traits, and save states. Where Rust forced a difference, the module header
-says so, and they are listed below.
+**The crate is still `pcengine_rust` and its public API is the base board's**: the socket
+traits, `BoardOptions`, `System`, `Frame`, `save_state`/`load_state`,
+`save_snapshot`/`load_snapshot`. An add-on crate (`supergrafx-rust`, `pcenginecd-rust`) or a
+page changes one line:
+
+```toml
+pcengine_rust = { package = "pcengine-rust-fast", path = "../pcengine-rust-fast" }
+```
+
+## Speed
+
+**x4.349 over the fork point natively, x4.04 under wasm**, measured directly (the fork
+point's build against this one, the same checksums of every picture, every sample and the
+final snapshot on both). Frames per second, one core, from power-on:
+
+| Title (600 frames, the picture gate's input) | fork point | now | | fork point, wasm | now, wasm | |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Blazing Lazers | 236.6 | 1045.4 | x4.418 | 150.5 | 600.9 | x3.99 |
+| Bonk's Adventure | 263.0 | 1245.4 | x4.735 | 166.8 | 751.0 | x4.50 |
+| R-Type | 258.0 | 1193.4 | x4.626 | 153.2 | 634.1 | x4.14 |
+| After Burner II | 253.9 | 1022.4 | x4.027 | 155.8 | 598.3 | x3.84 |
+| Street Fighter II' | 257.0 | 1026.3 | x3.993 | 154.3 | 580.3 | x3.76 |
+| all five (geometric mean) | | | **x4.349** | | | **x4.04** |
+
+Native: `pce-bench` by CPU time on one efficiency core of a shared, loaded machine
+(`scripts/ab.py`, the best of 12 runs a side); on a performance core of the same machine the
+five titles run 1166 to 1912 frames a second (350 to 397 at the fork point, x3.80),
+which is 19 to 32 times real time. Wasm: `wasm-bench/` under Node 22 on the same efficiency core
+(`scripts/wasm-bench.sh`, fat LTO as the pages build, no `wasm-opt`): 9.7 to 12.6 times
+real time, where the fork point has 2.5 to 2.8.
+
+With a device on the expansion port (the CD unit's place; here `--device lockstep-port`, the
+gate's test device) the board must call the device every cycle, and the chain is
+x1.713 (214.1 to 344.3 frames a second on Blazing Lazers).
+
+**supergrafx-rust on this crate** (a scratch copy of it at `1d0528a` with the dependency line
+changed and nothing else): it builds, its 52 tests pass, its own 22 lockstep cases are
+identical from its reference cache, and its bench goes from about 150 to about 625 frames a
+second on 1941 Counter Attack and from 160 to 700 on Aldynes (wall clock, the same efficiency
+core, its own profile without LTO).
+
+| Kept, in order | A/B against the build before it (both with fat LTO, one codegen unit) |
+| --- | ---: |
+| **The event horizon.** The board keeps the earliest master clock at which `run_to` has anything to do (the next line, the end of the row, a VDC event, the timer's next tick); a CPU cycle that ends before it only moves the clock, and a work RAM access then skips `finish_access`. The base board runs `run_to` and `deliver_lines` after every cycle | x1.719 |
+| **The VDC's next event by hand**, not three options folded through an iterator (it is asked after every card access) | x1.176 |
+| **This crate's own cards finish like work RAM**: `RomCard`, `Sf2Card`, `PopulousCard` and `TennokoeCard` use nothing of their pins, so no stretch, hold, line or horizon can follow an access to one | x1.479 |
+| **A captured row with no palette write inside it** is looked up in one pass, with no dot times | x1.052 |
+| **A tile line's eight pixels from a bitplane table** (four lookups ORed), drawn straight into the row | x1.038 |
+| **The line path without copies**: with the default pixel path the capture reads the VDC's row where it lies; the row, the sprite list and the event list reuse their buffers | x1.031 |
+| **With a port device, only its `catch_up` before the horizon** (it is promised one every cycle), not the whole of `run_to` | x1.183 with a port device |
+| **The bus callbacks' quiet case keeps no register across a call**; the taps, the events and the full access are out of line | x1.132 |
+| **A `RomCard`'s image on loan to the board while it runs**: the ROM read inline, not through the card's trait with a `BoardPins` built for it | x1.066 |
+| **Work RAM and plain-card accesses stay quiet beside a port device**, unless its `catch_up` left a hold | x1.231 with a port device |
+| **Fat LTO, one codegen unit** for the crate's own binaries: the CPU core and the 65xx frame under it are other crates | x1.078 |
+
+The last row is the final tree built without LTO against itself built with it; the fork
+point gains only x1.029 from the same two lines (its time was in the scheduler, inside this
+crate). A/A (the last build against itself, 1,500 frames): x0.987.
+Tried and not kept, with their numbers: [docs/not-kept.md](docs/not-kept.md) (two attempts at
+the sprites, a colour table by pixel value for the capture, thin LTO, one codegen unit alone).
+
+## Building
 
 ```text
 cargo build --release
-scripts/fetch_pcenginepython.sh         # the reference at v0.1.0 into external/, with a PyPy venv
-scripts/rung1.sh                        # Covell's CPU test runs 60 frames
-scripts/rung2.sh                        # ... in lockstep with the reference
+scripts/ladder.sh                       # the gate (needs external/refcache and the HuCard library)
+target/release/pce-bench CARD.pce --frames 600 [--machine tg16]
 ```
 
-The CPU is [huc6280-rust](../huc6280-rust) (crate `huc6280`, transcribed from
-huc6280-python `v0.3.0`, the revision pcengine-python `v0.1.0` pins).
-**`Cargo.toml` depends on it by path (`../huc6280-rust`) while it is local
-only**: clone both side by side; the dependency is repinned to a GitHub
-revision once both are pushed.
-
-ROMs are bring-your-own, read in place and never committed (`.gitignore`
-refuses their extensions). Nothing GPL or LGPL was read or transcribed for
-this crate: the only source transcribed is pcengine-python, which is ours
+The CPU is [huc6280-rust](../huc6280-rust) (crate `huc6280`), **by path (`../huc6280-rust`)
+while it is local only**, as in the base board: clone both side by side. This fork does not
+edit it, nor 6502-rust under it. `external/refcache` (the reference's traces of the 275 cases)
+is copied from pcengine-rust's; it is not committed. ROMs are bring-your-own, read in place
+and never committed (`.gitignore` refuses their extensions). Nothing GPL or LGPL was read or
+transcribed: the only sources are pcengine-rust and, through it, pcengine-python, both ours
 and MIT. No emulator's source was opened.
 
-## Certification
+## Where the time goes
+
+Share of the samples by source file (`pce-profile`, library code charged to its caller), 600
+frames at the fork point and 2,000 now:
+
+| | Blazing Lazers, fork point | now | Street Fighter II', fork point | now |
+| --- | ---: | ---: | ---: | ---: |
+| The CPU core (huc6280-rust, and the 65xx frame of 6502-rust under it) | 10.4% | 32.1% | 8.0% | 31.8% |
+| `board.rs`: the bus callbacks, `run_to`, the decode | 28.4% | 26.4% | 29.2% | 23.6% |
+| `vdc/chip.rs`: `next_event`, `catch_up`, the port | 35.7% | 5.1% | 39.2% | 3.9% |
+| `vdc/sequencer.rs`, `vdc/dma.rs` | 5.8% | 3.7% | 5.4% | 3.1% |
+| `vdc/background.rs`, `vdc/sprites.rs`, `video.rs`: the picture | 9.0% | 20.6% | 10.0% | 21.9% |
+| `cards.rs`, `pagetable.rs` | 3.3% | 3.6% | 2.4% | 7.8% |
+| `psg/chip.rs`, `mixer.rs` | 1.1% | 3.4% | 0.7% | 3.7% |
+
+At the fork point two thirds of a frame were the scheduler: after every CPU cycle `run_to`
+asked each VDC and the timer for their next event (`Vdc::next_event` alone was a third, most
+of it an iterator over an array of three options) and `deliver_lines` recomputed the three
+interrupt lines. The picture, the sound and the CPU together were a fifth.
+
+Now the profile is flat: no source line is above 4% (the hottest, at 3 to 3.5% each, are the
+bus callbacks' first lines in `board.rs` and, in the CPU core, the opcode table lookup of
+`execute_sequence` and the dispatch's `match`), and **the largest share is the CPU core**:
+32.1% of Blazing Lazers and 31.8% of Street Fighter II', which this fork does not edit. What a
+`huc6280-rust-fast` would target, from the lines that show: the dispatch (`OPCODES[opcode]`
+gives an operation and an addressing mode, then two nested matches: one table of handlers
+would be one indirect jump an instruction); the frame's bookkeeping in every cycle
+(`pins.kind`, the cycle count, `Frame::access`, and `Part::step`'s polled options once an
+instruction); the MPR lookup in every cycle (`physical`); and a fetch that could read a
+program byte from a page the board lends, where today every byte is a `Bus::read`. The
+board's own share is mostly the bus callbacks: about thirty instructions a quiet cycle (the
+clock, the horizon test, the page's handler, the byte, the taps). The picture is a fifth:
+the sprite scan and drawing, the background, the capture's lookup, each a few per cent (two
+attempts at the sprites did not measure: docs/not-kept.md).
+
+## The rule and the gate
+
+A change is kept only if the gate stays green and an A/B measurement shows a gain above the
+A/A noise; it is then one commit with its factor in the message. A rejected one is a line in
+[docs/not-kept.md](docs/not-kept.md).
+
+**The gate**, `scripts/ladder.sh` (about a minute; `--faults` adds the seeded faults):
+`cargo test`; every lockstep case against the reference traces (`python3 scripts/lockstep.py
+--reference-cache external/refcache`: 275 of 275; the cache is pcengine-rust's, whose traces
+are pcengine-python's on all of them, so no Python runs); the save-state round trip and the
+run-ahead pass on the 18 picture-gate titles (rung 6). Every commit of this fork's history
+passed it as a tree of its own. `pce-bench` adds a check the gate's lines do not have: its
+checksum covers the snapshot's bytes at the end of the run, and `scripts/ab.py` refuses to
+compare two builds whose checksums differ, so **the state is the base board's too**, not only
+the bus, the picture and the sound.
+
+**The state after every cycle is the base board's.** The shortcuts skip work only where it
+would have found nothing to do; `tests/fork.rs` checks it directly: after every instruction
+of a program that runs the timer, a VRAM-to-VRAM DMA through the display period and VRAM
+writes at high CPU speed, a copy of the VDC and of the timer caught up to the clock equals
+the original; and cycle by cycle with a port device that starts a DMA from its `catch_up`.
+
+**Measuring** on a shared machine: `pce-bench` times `run_frame` and `take_audio` by the
+thread's own CPU time (`/proc/thread-self/schedstat`), and `scripts/ab.py` alternates two
+builds title by title on one pinned core and compares each side's best of 12 runs (other
+work only ever slows a run down). The five titles are Blazing Lazers, Bonk's Adventure,
+R-Type, After Burner II and Street Fighter II', with the picture gate's input (RUN at frame
+250, I at 400, right with II from 480); `--extra "--device lockstep-port"` measures the
+port-device path. An A/A run is within 1.5% overall and 6% a title. A build has its own
+luck too: without LTO, how the compiler splits the crate into codegen units moved one and
+the same change from x1.09 to x1.01 between two builds of it, so each change's factor in
+the table above is between two builds with fat LTO and one codegen unit, and a change below
+about 3% is not kept. **Profiling**: `perf` is not allowed here, so `pce-profile` (feature
+`profile`) samples the program counter on SIGPROF and `scripts/profile.py` resolves the
+samples with `addr2line`, inlined frames included, by crate and file, by function and by
+line.
+
+## What a host must know
+
+Nothing, if it uses `System` (`board_mut()`, `step()`, `run_frame()`, `run_until()`) and
+`BoardOptions`, as the add-on crates and the pages do. The fork adds three public functions
+and changes none: `Board::touch`, `vdc::background::row_into`, `vdc::sprites::scan_into`.
+
+- **`Board::touch()`** tells the board it was reached from outside a bus access, so it
+  forgets the event horizon and decides its shortcuts again. `System::board_mut`, `step`,
+  `run_frame` and `run_until` call it, and so do `Board::reset`, `hold`, `advance` and `vdc`.
+  The one case a host must call it itself: it holds a bare `Board` (or goes through
+  `system.cpu.bus`), changes a public field between two bus callbacks, and then drives the
+  bus (or `system.cpu.step()`) directly.
+- **A `RomCard`'s `data` is with the board while it runs** (moved, not copied), when there is
+  no port device and the pixel path is the default: `touch()` puts it back, so a host that
+  looks through `board_mut()` finds it, and changes to it are what the CPU reads next. The
+  mapper cards and any card that is not this crate's own are not lent.
+- **The taps** (`bus_log`, `bus_detail`) are honoured on every path; the gate runs with them on.
+- **Save states** are the base board's, byte for byte, for the same run (the bench's
+  checksum); the format and the refusals are unchanged.
+- **Build with `lto = "fat"` and `codegen-units = 1`** in the depending crate's release
+  profile (this crate's own profile only reaches its own binaries): it is worth a tenth.
+
+## Under wasm
+
+`wasm-bench/` is the board behind five plain exports (no wasm-bindgen), built for
+`wasm32-unknown-unknown` with the rustup 1.93.1 toolchain and run under Node by
+`scripts/wasm-bench.sh`, which also runs the same five runs natively and compares the
+checksums. `--base DIR` builds the same bench on another checkout (the fork point).
+
+**The PSG's level table is not the same under wasm.** `Psg::new` computes
+`10f64.powf(-1.5 * u / 20.0)` for 128 attenuations with the platform's `pow`; under
+`wasm32-unknown-unknown` (Rust's own libm) 9 of the 128 values differ from the native build's
+(glibc) by one unit in the last place: entries 6, 10, 18, 42, 50, 70, 74, 81 and 109. This is
+the base board's (it is so at the fork point too) and is not changed here, since it is not
+speed. What it means today: on the five benchmark runs every mixed sample and every picture
+is still identical under wasm and natively (the level differences vanish in the rounding to
+16 bits), but nothing guarantees that for every game, and **a snapshot or a save state taken
+under wasm does not have the native build's bytes** (the table is in the PSG's state; a state
+loads either way, because a loaded state keeps the system's own table). The fix belongs in
+pcengine-rust (and the reference decides what the values are: Python's `**` is the platform's
+`pow` too): the 128 values as literals, or a `pow` that is the same everywhere.
+
+## The base board
+
+From here on this is pcengine-rust's README at the fork point (`49e3d48`): what the board is,
+how it was certified against the reference, how to use it and how an add-on plugs in. All of
+it holds for this fork, which runs the same cases from the reference cache; where the fork
+differs, a note in *italics* says so.
+
+### Certification
 
 | What | Version |
 | --- | --- |
@@ -157,6 +321,14 @@ untouched.
 
 ### Seeded faults
 
+*This fork: **68 caught, 0 missed**: the base board's 48, each by the same check as below,
+and 20 in the fork's own shortcuts (the last 20 rows of the table; at least one on every
+kept change that has code), of which the unit tests of `tests/fork.rs` catch those that change the state but
+no bus cycle, picture or sample. The first run missed one, `next-event-forgets-the-commit`:
+at 12 master clocks a cycle a VRAM write's slot always falls inside the access's own stretch,
+so the test program now runs at high CPU speed. The faults are built without LTO (the same
+source).*
+
 `scripts/seeded_faults.py` plants one single-line fault at a time in a copy
 of `src/`, builds it, and runs the checks cheapest first until one fails:
 rung 2 (Covell's test and the probe card), rung 5 (the socket, machine and
@@ -213,6 +385,26 @@ library, rung 6.
 | `state-takes-the-timer-switch` | `state.rs` | a loaded state overwrites the system's own `underflow_window_mclk` | `cargo test` (`loading_keeps_the_wiring_and_the_switches`) |
 | `no-reset-requested` | `system.rs` | the CPU is put on the board without a reset: no start sequence, no reset vector | rung 2 (`covell`) |
 | `seed-low-bits` | `mt.rs` | a seeded power-on takes the low bits of each random word | rung 5 (`sock-path-rtype`) |
+| `horizon-waits-for-the-underflow` | `board.rs` | the event horizon stops for the timer's underflow only, so the count is behind the clock between | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `horizon-sleeps-through-a-dma` | `board.rs` | the event horizon does not stop for a running VRAM DMA: its words move late | `cargo test` (`a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon`) |
+| `access-keeps-the-old-horizon` | `board.rs` | what an access schedules (a VRAM commit, the timer's start) is not in the event horizon | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `next-event-forgets-the-commit` | `vdc/chip.rs` | a VDC's next event leaves out a waiting VRAM access's slot | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `any-card-is-plain` | `board.rs` | a card that is not this crate's own (it may hold the CPU, raise IRQ2) has its accesses cut short too | rung 5 (`sock-card-bonk`) |
+| `quiet-access-with-a-hold-waiting` | `board.rs` | a work RAM or card access is cut short with a hold from outside waiting | `cargo test` (`a_hold_from_a_port_devices_catch_up_stretches_that_ram_access`) |
+| `palette-write-waits-for-the-row-end` | `video.rs` | the capture's quick row is taken with palette writes inside the row: they show from the next row | rung 2 (`covell`) |
+| `tile-line-mirrored` | `vdc/background.rs` | the bitplane table puts a tile line's pixels in the other order | rung 2 (`covell`) |
+| `background-fine-scroll-dropped` | `vdc/background.rs` | the first tile of a background row is drawn from its left edge whatever BXR's low bits | rung 2 (`base-probe`) |
+| `any-path-is-direct` | `board.rs` | the capture reads the first VDC's row whatever pixel path is plugged in | rung 5 (`sock-path-rtype`) |
+| `row-buffer-not-cleared` | `vdc/chip.rs` | a line's row starts as the last line's pixels, not as overscan | rung 2 (`covell`) |
+| `sprite-list-not-emptied` | `vdc/sprites.rs` | a line's sprite scan adds to the last line's entries | rung 2 (`base-probe`) |
+| `line-events-not-emptied` | `vdc/sequencer.rs` | a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites | rung 4 (`lib-Great Fumo Binning, The (World) (Aftermarket) (Unl)`) |
+| `port-catch-up-keeps-the-old-horizon` | `board.rs` | what a port device's `catch_up` does to a VDC is not in the event horizon | `cargo test` (`a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon`) |
+| `quiet-idle-cycle-not-tapped` | `board.rs` | an idle cycle before the event horizon is left out of the bus log | rung 2 (`covell`) |
+| `full-read-skips-the-events` | `board.rs` | a read cycle that reaches the event horizon does not run the events | rung 2 (`base-probe`) |
+| `rom-lent-beside-a-port-device` | `board.rs` | a RomCard's image is taken by the board although a port device could look at the card | `cargo test` (`a_rom_card_has_its_image_whenever_a_port_device_looks`) |
+| `rom-not-given-back` | `board.rs` | a RomCard's image stays with the board when the host reaches the card | `cargo test` (`a_rom_card_has_its_image_whenever_the_host_looks`) |
+| `lent-rom-bank-offsets` | `cards.rs` | the board reads a lent image's banks from the wrong place | rung 2 (`covell`) |
+| `hold-from-catch-up-waits` | `board.rs` | a hold a port device leaves from `catch_up` is not applied by a work RAM or plain card access | `cargo test` (`a_hold_from_a_port_devices_catch_up_stretches_that_ram_access`) |
 
 **48 caught, 0 missed**: 28 by rung 2 (Covell's test or the probe card), 13
 by rung 5, 1 by the smoke list, 5 by the unit tests (`tests/sockets.rs` and
@@ -232,25 +424,7 @@ interrupt lines (all three are low at power-on, which is what the CPU
 already holds). `pad6-counts-clr-level` is caught by a unit test only: on
 every pad scan the cases make, the faulty pad's count has the right parity.
 
-### Speed
-
-Speed is the fast fork's job; this is the figure to measure it against.
-Frames per second from power-on, nothing logged (`pce-bench`,
-`scripts/bench.py`), one core:
-
-| Title (600 frames, as TurboGrafx-16, with pad input) | pcengine-rust | pcengine-python on PyPy 7.3.20 (whole run; second half) |
-| --- | --- | --- |
-| Blazing Lazers | 316-321 | 11.2; 11.5 |
-| Bonk's Adventure | 296-331 | 11.8; 12.4 |
-| R-Type | 305-337 | 8.6; 11.3 |
-
-About 5.3 times real time (59.8 frames a second) against the reference's
-0.19, some 27 times the reference, on a machine at load 30 (the Rust runs one
-after another, three times each; the reference's three at once). The time is
-the board's, not the CPU's: every CPU cycle runs the scheduler (`run_to`) and
-asks each device for its next event, as the reference does.
-
-## Where Rust forced a difference
+### Where Rust forced a difference
 
 Each module's header says so; together:
 
@@ -302,7 +476,7 @@ Each module's header says so; together:
   reference's scripts make by wrapping the bus callables), `trace.rs`,
   `fake_devices.rs`.
 
-## Using the board (the fast fork, the browser page, an add-on)
+### Using the board (the browser page, an add-on)
 
 ```rust
 use pcengine_rust::board::{Board, BoardOptions};
@@ -389,7 +563,7 @@ fn run(image: &[u8]) -> Result<(), String> {
   device, the pixel path and the CPU's on-die peripherals, as the
   reference's; the CPU is `system.cpu.request_reset()`.
 
-### How an add-on crate plugs in
+#### How an add-on crate plugs in
 
 Every socket of the reference's docs/sockets.md is a trait in `sockets.rs`,
 and `fake_devices.rs` has a device for each that a real game runs on, in
@@ -426,7 +600,7 @@ The PSG's level table is `10f64.powf(...)` at construction, which is the
 platform's `pow`: a fork that must stay sample-identical across targets
 should check that table against this crate's on the target (128 values).
 
-## Layout
+### Layout
 
 Each `src/*.rs` file is the transcription of the `pcengine_python` module of
 the same name: `machine`, `sockets`, `pagetable`, `hardware_page`, `board`,
@@ -438,14 +612,17 @@ gate's lines, the reference's press spelling, `roundtrip` and `runahead`),
 `fake_devices.rs` (the reference's `tests/fake_devices.py`, and the three
 lockstep devices). Binaries: `pce-trace`, `pce-state-roundtrip`,
 `pce-bench`. Tests: `tests/sockets.rs` (the reference's
-`tests/test_sockets.py`), `pads.rs`, `cards.rs`, `state.rs`.
+`tests/test_sockets.py`), `pads.rs`, `cards.rs`, `state.rs`. *The fork adds
+`src/bin/pce-profile.rs`, `tests/fork.rs`, `scripts/ladder.sh`, `ab.py`, `profile.py`,
+`wasm-bench.sh`, `wasm-bench/` (a crate of its own) and `docs/fast-brief.md`,
+`docs/not-kept.md`; `pce-bench` times by CPU time and prints a checksum.*
 
 Not transcribed: the reference's scripts that drive Mesen2, Beetle PCE, MAME
 and Mednafen and the picture comparisons against them (the reference has
 been judged against those; this board is judged against the reference), its
 debugger-side `peek` users and its PNG writer.
 
-## Notes on the reference
+### Notes on the reference
 
 Nothing found is a divergence: the Rust board does what pcengine-python
 `v0.1.0` does in each case, and the gate runs through all of them. They are
@@ -481,6 +658,19 @@ transcribed, left for its maintainers:
    VCE, the PSG or the RAM.
 
 ## Reproducing
+
+*The fork's own:*
+
+```text
+scripts/ladder.sh [--faults]            # the gate: cargo test, 275 lockstep cases from the cache, rung 6
+scripts/ab.py BIN_A BIN_B [--frames N] [--extra ARGS]    # A/B two builds of pce-bench; --fps BIN for one
+cargo run --release --features profile --bin pce-profile -- IMAGE --frames 600 && scripts/profile.py
+scripts/wasm-bench.sh [--base DIR]      # the five titles under Node, the PSG level table against native
+scripts/seeded_faults.py [--only REGEX] [--check]
+```
+
+*The base board's (the reference itself is only needed for a case missing from
+`external/refcache`, which is copied from pcengine-rust's `external/refcache`):*
 
 ```text
 scripts/fetch_pcenginepython.sh [DEST] [SOURCE]   # the reference at v0.1.0, with a PyPy venv

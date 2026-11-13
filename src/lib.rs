@@ -3,6 +3,12 @@
 //! (`bc9b976`) and proven equivalent to it: every CPU bus cycle, every frame's
 //! picture at the 9-bit palette value, every mixed audio sample.
 //!
+//! **This is the speed fork** (package `pcengine-rust-fast`, the same crate name and public
+//! API as pcengine-rust): the same board with shortcuts that are kept only while its traces
+//! stay identical to the base board's and a measurement shows they pay (README). A host
+//! reaches the board through `System` (`board_mut`, `step`, `run_frame`, `run_until`); one
+//! that drives a bare `Board` and changes it between bus callbacks calls `Board::touch`.
+//!
 //! Each module is the transcription of one `pcengine_python` module, with the
 //! same names, every named switch as a field with the reference's default, and
 //! the comments that cite a source carried over. Where Rust forced a

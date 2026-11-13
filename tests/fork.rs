@@ -14,7 +14,8 @@ use pcengine_rust::system::System;
 /// line).
 fn program() -> Vec<u8> {
     let code: &[u8] = &[
-        0x78, // SEI
+        0x78,
+        0xD4, // SEI; CSH: 3 master clocks a cycle, so a VRAM write's slot comes after it
         0xA9, 0xFF, 0x53, 0x02, // LDA #$FF; TAM #$02: the hardware page at $2000
         0x03, 0x0B, 0x13, 0x1F, 0x23, 0x00, // ST0 #$0B; ST1 #$1F; ST2 #$00: HDR, 256 dots
         0x03, 0x0C, 0x13, 0x02, 0x23, 0x0F, // VPR: VSW 2, VDS 15
@@ -25,15 +26,15 @@ fn program() -> Vec<u8> {
         0x03, 0x10, 0x13, 0x00, 0x23, 0x10, // SOUR $1000
         0x03, 0x11, 0x13, 0x00, 0x23, 0x20, // DESR $2000
         0x03, 0x12, 0x13, 0x00, 0x23, 0x40, // LENR $4000: the transfer starts
-        0xA2, 0x20, 0xA0, 0x00, // LDX #$20; LDY #$00
-        0x88, 0xD0, 0xFD, 0xCA, 0xD0, 0xFA, // wait: DEY; BNE wait; DEX; BNE wait (1.6 frames)
+        0xA2, 0x40, 0xA0, 0x00, // LDX #$40; LDY #$00
+        0x88, 0xD0, 0xFD, 0xCA, 0xD0, 0xFA, // wait: DEY; BNE wait; DEX; BNE wait (0.8 frames)
         0x03, 0x00, 0x13, 0x00, 0x23, 0x30, // MAWR $3000
         0x03, 0x02, // ST0 #$02: the data register (the first write ends the transfer)
-        0x13, 0xAA, 0x23, 0x55, // loop ($E04B): ST1 #$AA; ST2 #$55: a word for VRAM
+        0x13, 0xAA, 0x23, 0x55, // loop ($E04C): ST1 #$AA; ST2 #$55: a word for VRAM
         0xEA, 0xEA, 0xEA, // NOP x 3
-        0x4C, 0x4B, 0xE0, // JMP loop
+        0x4C, 0x4C, 0xE0, // JMP loop
     ];
-    assert_eq!(code.len(), 0x4B + 10);
+    assert_eq!(code.len(), 0x4C + 10);
     let mut data = vec![0xEA; 0x2000];
     data[..code.len()].copy_from_slice(code);
     data[0x1FFE] = 0x00;
@@ -56,7 +57,7 @@ fn system() -> System {
 fn every_device_is_caught_up_after_every_instruction() {
     let mut system = system();
     let (mut dma_ran, mut dma_waited, mut ticks, mut words) = (0, 0, 0, 0);
-    for step in 0..40_000 {
+    for step in 0..80_000 {
         system.cpu.step();
         let board = &system.cpu.bus;
         let vdc = &board.vdcs[0];

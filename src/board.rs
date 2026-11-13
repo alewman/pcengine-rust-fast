@@ -26,6 +26,15 @@
 //! - **`bus_log`** is the tap the reference's scripts make by wrapping the three callables
 //!   (`scripts/state_roundtrip.py`, `observe`): when it is `Some`, every cycle appends the same
 //!   words.
+//!
+//! **The speed fork's shortcuts** (none in the base board; each says so where it is, as "the
+//! fork"): the event horizon (`wake`, `events_at`, `horizon`, `touch`), under which a CPU cycle
+//! only moves the clock; the quiet access (`quiet_page`: work RAM, this crate's own cards, a
+//! `RomCard`'s image on loan, `lend_rom`), which skips `finish_access`; the port device's
+//! cycle (`port_catch_up` alone before the horizon); the direct pixel path in `end_row`; and
+//! the bus callbacks split into a short quiet case and the rest (`*_in_full`). All of them
+//! skip work only where the base board's would have found nothing to do: the state after
+//! every cycle is the base board's (tests/fork.rs).
 
 use huc6280::{Bus, Pins};
 
