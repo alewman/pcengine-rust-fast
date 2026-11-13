@@ -30,5 +30,11 @@ profile = ["dep:libc"]
 name = "pce-profile"
 required-features = ["profile"]
 
+# Whole-program optimisation for this crate's own binaries (the gate's and the bench's): the
+# CPU core and the 65xx frame under it are other crates, and every CPU cycle crosses both
+# borders. A crate that depends on this one sets its own profile (the browser pages build
+# with the same two lines).
 [profile.release]
 debug = 1
+lto = "fat"
+codegen-units = 1

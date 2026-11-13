@@ -502,6 +502,8 @@ def main() -> int:
         manifest = (ROOT / "Cargo.toml").read_text().replace(
             'path = "../huc6280-rust"', f'path = "{(ROOT.parent / "huc6280-rust").as_posix()}"'
         )
+        # the same source built without the whole-program pass: a fault costs a third of the build
+        manifest = manifest.replace('lto = "fat"\ncodegen-units = 1\n', "")
         (tree / "Cargo.toml").write_text(manifest)
         shutil.copy(ROOT / "Cargo.lock", tree / "Cargo.lock")
         source = tree / "src" / file
