@@ -139,6 +139,9 @@ pub struct Board {
     /// The card is one of this crate's own (`card_is_plain`): its accesses finish like work
     /// RAM's.
     pub(crate) plain_card: bool,
+    /// The pixel path is this crate's `DirectPath` (VDC 1 straight into the VCE): `end_row`
+    /// hands the capture the VDC's row itself.
+    pub(crate) direct_path: bool,
 }
 
 impl Board {
@@ -218,8 +221,9 @@ impl Board {
             wake: i64::MIN,
             unsettled: true,
             plain_card: false,
+            direct_path: false,
         };
-        board.plain_card = board.card_is_plain();
+        board.touch();
         let divider = board.vce.dot_divider();
         for vdc in board.vdcs.iter_mut() {
             vdc.hsync(board.timeline.line_start, divider);
@@ -245,6 +249,7 @@ impl Board {
         self.wake = i64::MIN;
         self.unsettled = true;
         self.plain_card = self.card_is_plain();
+        self.direct_path = self.pixel_path.as_any_mut().is::<DirectPath>();
     }
 
     /// The fork: the card in the slot is this crate's own `RomCard`, `Sf2Card`, `PopulousCard`
@@ -659,6 +664,19 @@ impl Board {
         }
         let timing = self.row_timing.expect("a row ends after a line began");
         let dots = (LINE_CLOCKS / timing.dot_divider) as usize;
+        if self.direct_path {
+            // The fork: `DirectPath::mix` returns the first VDC's row, so the capture reads
+            // it where it lies (the base board copies every VDC's row for the path).
+            match self.vdcs[0].drawn_row(dots) {
+                Some(row) => self.capture.finish_line(&timing, row, &mut self.vce),
+                None => {
+                    let row = self.vdcs[0].pixel_row(dots);
+                    self.capture.finish_line(&timing, &row, &mut self.vce);
+                }
+            }
+            self.row_end = None;
+            return;
+        }
         let rows: Vec<Vec<u16>> = self.vdcs.iter().map(|vdc| vdc.pixel_row(dots)).collect();
         let row = self.pixel_path.mix(&timing, rows);
         self.capture.finish_line(&timing, &row, &mut self.vce);

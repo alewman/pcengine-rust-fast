@@ -215,13 +215,15 @@ impl Vdc {
         let to_byr = if hds <= 2 { 1 } else { (hds + 1) * 8 - 21 };
         let to_bxr = to_byr + if hds <= 2 { 2 } else { 1 };
         let seq = &mut self.seq;
-        seq.events = vec![
+        // (the fork: the list's own buffer again)
+        seq.events.clear();
+        seq.events.extend_from_slice(&[
             (seq.hds_start, Event::Hds),
             (seq.hds_start + to_byr * divider, Event::Byr),
             (seq.hds_start + to_bxr * divider, Event::Bxr),
             (seq.active_start, Event::Hdw),
             (seq.final_at, Event::Final),
-        ];
+        ]);
         if let Some(vblank_dots) = seq.vblank_dots {
             if vblank_dots >= 0 {
                 seq.events

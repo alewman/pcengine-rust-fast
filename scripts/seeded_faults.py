@@ -379,13 +379,37 @@ FAULTS = {
         "vdc/background.rs",
         "table[byte] |= 1 << (4 * x);",
         "table[byte] |= 1 << (4 * (7 - x));",
-        "the bitplane table puts a tile line's (and a sprite row's) pixels in the other order",
+        "the bitplane table puts a tile line's pixels in the other order",
     ),
     "background-fine-scroll-dropped": (
         "vdc/background.rs",
         "let mut pixels = pixels >> (4 * skip);",
         "let mut pixels = pixels;",
         "the first tile of a background row is drawn from its left edge whatever BXR's low bits",
+    ),
+    "any-path-is-direct": (
+        "board.rs",
+        "self.direct_path = self.pixel_path.as_any_mut().is::<DirectPath>();",
+        "self.direct_path = true;",
+        "the capture reads the first VDC's row whatever pixel path is plugged in",
+    ),
+    "row-buffer-not-cleared": (
+        "vdc/chip.rs",
+        "        row.clear();\n        row.resize(dots, 0x100u16);",
+        "        row.resize(dots, 0x100u16);",
+        "a line's row starts as the last line's pixels, not as overscan",
+    ),
+    "sprite-list-not-emptied": (
+        "vdc/sprites.rs",
+        "    entries.clear();\n",
+        "",
+        "a line's sprite scan adds to the last line's entries",
+    ),
+    "line-events-not-emptied": (
+        "vdc/sequencer.rs",
+        "        seq.events.clear();\n",
+        "",
+        "a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites",
     ),
 }
 

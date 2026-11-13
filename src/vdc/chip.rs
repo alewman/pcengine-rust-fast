@@ -242,7 +242,9 @@ impl Vdc {
         let next_start = dots + 8 + (self.regs.hds() + 1) * 8 - 16;
         let budget = 0.max(next_start - previous_end)
             / sprites::CLOCKS_PER_SPRITE[((self.mwr_cache >> 2) & 3) as usize];
-        let (entries, overflow) = sprites::scan(
+        // The fork: into the last line's list (`scan` allocates one).
+        let overflow = sprites::scan_into(
+            &mut self.sprite_entries,
             &self.vram,
             VRAM_WORDS,
             &self.sat,
@@ -250,7 +252,6 @@ impl Vdc {
             self.mwr_cache,
             budget as usize,
         );
-        self.sprite_entries = entries;
         if overflow && self.regs.cr() & r::CR_OVERFLOW_IRQ != 0 {
             self.status |= r::OR;
         }
@@ -280,7 +281,10 @@ impl Vdc {
     pub(crate) fn render_line(&mut self) {
         let seq = &self.seq;
         let dots = (1365 / seq.divider) as usize;
-        let mut row = vec![0x100u16; dots];
+        // The fork: the last line's buffer again (the base board allocates a row a line).
+        let mut row = self.row.take().unwrap_or_default();
+        row.clear();
+        row.resize(dots, 0x100u16);
         if !seq.display_line {
             self.row = Some(row);
             return;
@@ -508,6 +512,15 @@ impl Vdc {
 
     pub fn vphase(&self) -> VPhase {
         self.seq.vphase
+    }
+
+    /// The fork: `pixel_row` without the copy, where the line was drawn at this width.
+    #[inline]
+    pub(crate) fn drawn_row(&self, dots: usize) -> Option<&[u16]> {
+        match &self.row {
+            Some(row) if row.len() == dots => Some(row),
+            _ => None,
+        }
     }
 
     /// The 9-bit VDC output for the line that just ran (drawn by `render_line`).
