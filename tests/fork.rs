@@ -188,3 +188,104 @@ fn a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon() {
     }
     assert!(moved > 0, "the transfer the port device started never ran");
 }
+
+/// A card that counts in work RAM: `LDA #n; STA $2000` for ever (work RAM at $2000), where
+/// `n` is the image's byte 5.
+fn counter() -> Vec<u8> {
+    let code: &[u8] = &[
+        0xA9, 0xF8, 0x53, 0x02, // LDA #$F8; TAM #$02: work RAM at $2000
+        0xA9, 0x11, 0x8D, 0x00, 0x20, // loop ($E004): LDA #$11; STA $2000
+        0x4C, 0x04, 0xE0, // JMP loop
+    ];
+    let mut data = vec![0xEA; 0x2000];
+    data[..code.len()].copy_from_slice(code);
+    data[0x1FFE] = 0x00;
+    data[0x1FFF] = 0xE0;
+    data
+}
+
+fn image_of(board: &mut Board) -> &mut Vec<u8> {
+    let card = board.slot.card.as_mut().expect("a card");
+    &mut card
+        .as_any_mut()
+        .downcast_mut::<RomCard>()
+        .expect("a RomCard")
+        .data
+}
+
+#[test]
+fn a_rom_card_has_its_image_whenever_the_host_looks() {
+    let mut system = System::new(
+        Board::new(BoardOptions {
+            card: Some(Box::new(RomCard::new(&counter()).unwrap())),
+            ..BoardOptions::default()
+        })
+        .unwrap(),
+    );
+    system.run_frame();
+    assert_eq!(system.board().ram.data[0], 0x11);
+    // the image is the card's, whole, between any two runs
+    assert_eq!(*image_of(system.board_mut()), counter());
+    system.step();
+    assert_eq!(*image_of(system.board_mut()), counter());
+    // and a byte the host changes in it is the byte the CPU reads
+    image_of(system.board_mut())[5] = 0x22;
+    system.run_frame();
+    assert_eq!(system.board().ram.data[0], 0x22);
+    assert_eq!(image_of(system.board_mut())[5], 0x22);
+}
+
+/// A port device that looks at the card's image at every catch-up.
+struct Reader {
+    looked: u64,
+}
+
+impl DeviceState for Reader {}
+
+impl PageHandler for Reader {
+    fn read(&mut self, _address: u32, _mclk: i64, _pins: &mut BoardPins) -> u8 {
+        0xFF
+    }
+
+    fn write(&mut self, _address: u32, _value: u8, _mclk: i64, _pins: &mut BoardPins) {}
+}
+
+impl PortDevice for Reader {
+    fn present(&self) -> bool {
+        true
+    }
+
+    fn claims(&self) -> Vec<(usize, usize)> {
+        Vec::new()
+    }
+
+    fn catch_up(&mut self, _mclk: i64, pins: &mut BoardPins) {
+        let card = pins.card.as_mut().expect("the card");
+        let image = &card.as_any_mut().downcast_mut::<RomCard>().unwrap().data;
+        assert_eq!(image.len(), 0x2000, "the card's image is not with the card");
+        self.looked += 1;
+    }
+
+    fn reset(&mut self, _kind: ResetKind, _pins: &mut BoardPins) {}
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[test]
+fn a_rom_card_has_its_image_whenever_a_port_device_looks() {
+    let mut system = System::new(
+        Board::new(BoardOptions {
+            card: Some(Box::new(RomCard::new(&counter()).unwrap())),
+            port: Some(Box::new(Reader { looked: 0 })),
+            ..BoardOptions::default()
+        })
+        .unwrap(),
+    );
+    system.run_frame();
+    system.run_frame();
+    let port = system.board_mut().port.as_mut().unwrap();
+    let reader = port.as_any_mut().downcast_mut::<Reader>().unwrap();
+    assert!(reader.looked > 10_000);
+}

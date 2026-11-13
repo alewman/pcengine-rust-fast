@@ -145,6 +145,14 @@ pub struct Board {
     /// The pixel path is this crate's `DirectPath` (VDC 1 straight into the VCE): `end_row`
     /// hands the capture the VDC's row itself.
     pub(crate) direct_path: bool,
+    /// `touch` was called: `plain_card`, `direct_path` and the loan below are decided again
+    /// when the board next runs (`settle`), after whatever the host is changing.
+    pub(crate) stale: bool,
+    /// A `RomCard`'s image, on loan to the board while it runs (`lend_rom`): the card's
+    /// `data` is empty meanwhile, and `touch` gives it back before anything can look.
+    pub(crate) rom: Vec<u8>,
+    pub(crate) rom_offsets: [u32; 128],
+    pub(crate) rom_lent: bool,
 }
 
 impl Board {
@@ -226,6 +234,10 @@ impl Board {
             unsettled: true,
             plain_card: false,
             direct_path: false,
+            stale: true,
+            rom: Vec::new(),
+            rom_offsets: [0; 128],
+            rom_lent: false,
         };
         board.touch();
         let divider = board.vce.dot_divider();
@@ -253,8 +265,56 @@ impl Board {
         self.wake = i64::MIN;
         self.events_at = i64::MIN;
         self.unsettled = true;
+        self.stale = true;
+        if self.rom_lent {
+            self.return_rom();
+        }
+    }
+
+    /// What `touch` left to decide, at the first cycle after it (the host has finished).
+    #[cold]
+    fn settle(&mut self) {
+        self.stale = false;
         self.plain_card = self.card_is_plain();
         self.direct_path = self.pixel_path.as_any_mut().is::<DirectPath>();
+        self.lend_rom();
+    }
+
+    /// The fork: a `RomCard`'s read is `data[offset of the bank + offset in it]`; the board
+    /// does it itself, without the call through the card's trait, by taking the image for as
+    /// long as it runs. Nothing can tell: the card is reached only through the board
+    /// (`board_mut()` and the other ways in call `touch`, which gives the image back first),
+    /// through `&Board` (which cannot reach a card's fields), or by a port device or a
+    /// replacement pixel path through their pins, and with either there is no loan.
+    fn lend_rom(&mut self) {
+        if self.port.is_some() || !self.direct_path || self.rom_lent {
+            return;
+        }
+        let Some(card) = self.slot.card.as_mut() else {
+            return;
+        };
+        if let Some(card) = card.as_any_mut().downcast_mut::<RomCard>() {
+            self.rom_offsets = card.bank_offsets();
+            self.rom = std::mem::take(&mut card.data);
+            self.rom_lent = true;
+        }
+    }
+
+    fn return_rom(&mut self) {
+        self.rom_lent = false;
+        let rom = std::mem::take(&mut self.rom);
+        if let Some(card) = self.slot.card.as_mut() {
+            if let Some(card) = card.as_any_mut().downcast_mut::<RomCard>() {
+                card.data = rom;
+            }
+        }
+    }
+
+    /// `RomCard::read` on the lent image.
+    #[inline(always)]
+    fn rom_read(&self, address: u32) -> u8 {
+        let offset = self.rom_offsets[((address >> 13) & 0x7F) as usize];
+        self.rom[offset as usize + (address & 0x1FFF) as usize]
     }
 
     /// The fork: the card in the slot is this crate's own `RomCard`, `Sf2Card`, `PopulousCard`
@@ -345,6 +405,7 @@ impl Board {
                 let cd_attached = self.cd_attached();
                 self.cpu_io.read(address & 0x1FFF, mclk, cd_attached)
             }
+            Handler::Card if self.rom_lent => self.rom_read(address),
             Handler::Card => {
                 let Board {
                     slot,
@@ -421,6 +482,7 @@ impl Board {
             Handler::CpuIo => self
                 .cpu_io
                 .write(address & 0x1FFF, value, mclk, &mut self.psg),
+            Handler::Card if self.rom_lent => {} // a plain ROM ignores writes
             Handler::Card => {
                 let Board {
                     slot,
@@ -500,14 +562,15 @@ impl Board {
     /// device's `catch_up`), has nothing to finish: no stretch (the page is below the hardware
     /// page), no hold, no line or disable mask it could have changed, nothing scheduled.
     #[inline(always)]
-    fn quiet_page(&self, address: u32) -> Option<Handler> {
+    fn quiet_page(&self, address: u32) -> Quiet {
         if self.unsettled || (address >> PAGE_BITS) as usize >= HARDWARE_FIRST_PAGE {
-            return None;
+            return Quiet::No;
         }
         match self.pages.handler(address) {
-            Handler::Ram => Some(Handler::Ram),
-            Handler::Card if self.plain_card => Some(Handler::Card),
-            _ => None,
+            Handler::Ram => Quiet::Ram,
+            Handler::Card if self.rom_lent => Quiet::Rom,
+            Handler::Card if self.plain_card => Quiet::Card,
+            _ => Quiet::No,
         }
     }
 
@@ -595,6 +658,9 @@ impl Board {
 
     #[inline(never)]
     fn advance_events(&mut self, pins: Option<&mut Pins>) {
+        if self.stale {
+            self.settle();
+        }
         if self.mclk < self.events_at {
             // Only with a port device: nothing is due but its `catch_up`, which may raise
             // IRQ2, hold the CPU or reach a VDC, so the lines and the horizon follow.
@@ -780,6 +846,15 @@ impl Board {
     }
 }
 
+/// What `quiet_page` finds: work RAM, a lent ROM image (`lend_rom`), another plain card.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Quiet {
+    No,
+    Ram,
+    Rom,
+    Card,
+}
+
 // The fork: each callback is a short quiet case (the cycle ends before the event horizon and
 // the access, if any, is work RAM's or a plain card's) that keeps no register across a call,
 // and the rest out of line (`*_in_full`), which is the base board's callback.
@@ -840,9 +915,10 @@ impl Board {
         }
         let address_in = address & ADDRESS_MASK;
         let value = match self.quiet_page(address_in) {
-            Some(Handler::Ram) => self.ram.read(address_in),
-            Some(_) => return self.quiet_card_read(address),
-            None => {
+            Quiet::Ram => self.ram.read(address_in),
+            Quiet::Rom => self.rom_read(address_in),
+            Quiet::Card => return self.quiet_card_read(address),
+            Quiet::No => {
                 let value = self.page_read(address, self.mclk);
                 self.finish_access(address, cycle, pins);
                 value
@@ -861,9 +937,10 @@ impl Board {
         }
         let address_in = address & ADDRESS_MASK;
         match self.quiet_page(address_in) {
-            Some(Handler::Ram) => self.ram.write(address_in, value),
-            Some(_) => return self.quiet_card_write(address, value),
-            None => {
+            Quiet::Ram => self.ram.write(address_in, value),
+            Quiet::Rom => {} // a plain ROM ignores writes
+            Quiet::Card => return self.quiet_card_write(address, value),
+            Quiet::No => {
                 self.page_write(address, value, self.mclk);
                 self.finish_access(address, cycle, pins);
             }
@@ -892,15 +969,22 @@ impl Bus for Board {
         if self.mclk < self.wake {
             let address_in = address & ADDRESS_MASK;
             match self.quiet_page(address_in) {
-                Some(Handler::Ram) => {
+                Quiet::Ram => {
                     let value = self.ram.read(address_in);
                     if self.tapped() {
                         return self.tap(0, address, value);
                     }
                     return value;
                 }
-                Some(_) => return self.quiet_card_read(address),
-                None => {}
+                Quiet::Rom => {
+                    let value = self.rom_read(address_in);
+                    if self.tapped() {
+                        return self.tap(0, address, value);
+                    }
+                    return value;
+                }
+                Quiet::Card => return self.quiet_card_read(address),
+                Quiet::No => {}
             }
         }
         self.read_in_full(address, cycle, pins)
@@ -913,15 +997,21 @@ impl Bus for Board {
         if self.mclk < self.wake {
             let address_in = address & ADDRESS_MASK;
             match self.quiet_page(address_in) {
-                Some(Handler::Ram) => {
+                Quiet::Ram => {
                     self.ram.write(address_in, value);
                     if self.tapped() {
                         self.tap(1, address, value);
                     }
                     return;
                 }
-                Some(_) => return self.quiet_card_write(address, value),
-                None => {}
+                Quiet::Rom => {
+                    if self.tapped() {
+                        self.tap(1, address, value);
+                    }
+                    return;
+                }
+                Quiet::Card => return self.quiet_card_write(address, value),
+                Quiet::No => {}
             }
         }
         self.write_in_full(address, value, cycle, pins)

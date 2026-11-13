@@ -90,6 +90,16 @@ impl RomCard {
         })
     }
 
+    /// The fork: for each of the 128 banks of the window, where in `data` it starts (the
+    /// board reads a lent image by it: board.rs, `lend_rom`).
+    pub(crate) fn bank_offsets(&self) -> [u32; WINDOW_BANKS] {
+        let mut offsets = [0; WINDOW_BANKS];
+        for (offset, bank) in offsets.iter_mut().zip(&self.map) {
+            *offset = (bank * BANK) as u32;
+        }
+        offsets
+    }
+
     #[inline]
     fn rom_read(&self, address: u32) -> u8 {
         let bank = ((address >> 13) & 0x7F) as usize;

@@ -429,6 +429,24 @@ FAULTS = {
         "        let address_in = address & ADDRESS_MASK;\n        let value = match",
         "a read cycle that reaches the event horizon does not run the events",
     ),
+    "rom-lent-beside-a-port-device": (
+        "board.rs",
+        "if self.port.is_some() || !self.direct_path || self.rom_lent {",
+        "if !self.direct_path || self.rom_lent {",
+        "a RomCard's image is taken by the board although a port device could look at the card",
+    ),
+    "rom-not-given-back": (
+        "board.rs",
+        "        if self.rom_lent {\n            self.return_rom();\n        }\n",
+        "",
+        "a RomCard's image stays with the board when the host reaches the card",
+    ),
+    "lent-rom-bank-offsets": (
+        "cards.rs",
+        "*offset = (bank * BANK) as u32;",
+        "*offset = (bank * BANK / 2) as u32;",
+        "the board reads a lent image's banks from the wrong place",
+    ),
 }
 
 LOCKSTEP = [
