@@ -4,7 +4,7 @@ A speed fork of [pcengine-rust](https://github.com/alewman/pcengine-rust), the
 Rust **PC Engine / TurboGrafx-16** board (itself transcribed from, and proven
 equivalent to, [pcengine-python](https://github.com/alewman/pcengine-python)
 `v0.2.0`), forked at `49e3d48` and merged with pcengine-rust 0.2.0 at
-`194c120`. It is **held in lockstep with it**: every change must leave this
+`194c120` (rung 7's record; the code at `39b29d1`). It is **held in lockstep with it**: every change must leave this
 board's traces identical to the base board's on every case (and so to the
 reference's), and must measure faster, or it is not kept. Its CPU is
 [huc6280-rust-fast](https://github.com/alewman/huc6280-rust-fast), the speed
