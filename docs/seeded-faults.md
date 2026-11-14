@@ -1,8 +1,12 @@
 # Seeded faults (rung 7)
 
-A gate that cannot fail proves nothing. This is the record of the run that certified the
-board (2026-11-12, `scripts/rung7.sh` at `49e3d48`). The two later commits (`132e548` and
-`9c4608f`: the PSG's level curve as a written-out table) change no line a fault is planted in.
+A gate that cannot fail proves nothing. This is the record of the run on 2026-11-13 (0.2.0, against
+pcengine-python `v0.2.0`'s rebuilt reference cache, `scripts/rung7.sh` at `39b29d1`): pcengine-rust
+0.1.0's 48 faults (one changed text: `state-forgets-the-pad-latch` is now caught by `cargo test`, where
+it was rung 6) and eight new ones on what 0.2.0 carries: the board's VDC wait (`vdc-waits-alone`,
+`served-access-made-at-the-old-time`, `wait-not-held`, `wait-not-settled`, `decode-again-repeats-accesses`,
+`accesses-after-a-stop-made`), the PSG's level table (`level-table-built-once`) and the CPU state's new
+field in a save state (`state-drops-the-polled-lines`).
 
 `scripts/seeded_faults.py` plants one single-line fault at a time in a copy
 of `src/`, builds it, and runs the checks cheapest first until one fails:
@@ -14,10 +18,17 @@ library, rung 6.
 | --- | --- | --- | --- |
 | `vce-access-not-stretched` | `board.rs` | only a VDC access takes the extra cycle, not a VCE one (C4, ares' reading) | rung 2 (`covell`) |
 | `row-ends-a-dot-late` | `board.rs` | a line's picture row is handed to the capture 4 master clocks late | `cargo test` (`a_replacement_pixel_path_sees_every_line`) |
-| `irq1-from-the-first-vdc-only` | `board.rs` | a second VDC's interrupt is not ORed into IRQ1 (the reference's issue 0001) | rung 5 (`sock-path-probe`) |
+| `irq1-from-the-first-vdc-only` | `board.rs` | a second VDC's interrupt is not ORed into IRQ1 (the reference's issue 0001) | `cargo test` (`a_second_vdc_is_run_synced_read_for_pixels_and_ored_into_irq1`) |
 | `port-device-not-caught-up` | `board.rs` | the board never runs the port device up to its clock (the reference's issue 0002) | rung 5 (`sock-port-lazers`) |
 | `disable-mask-not-delivered` | `board.rs` | a write to $1402 never reaches the CPU | rung 5 (`sock-multitap-bomberman94`) |
 | `lines-delivered-only-on-advance` | `board.rs` | an interrupt line an access changed is seen by the CPU a cycle later | rung 2 (`base-probe`) |
+| `vdc-waits-alone` | `board.rs` | a waiting VDC runs alone to the transfer's end, lines ahead of the line clock (v0.1.0) | rung 2 (`base-probe`) |
+| `served-access-made-at-the-old-time` | `board.rs` | the access a VDC waited for is made at the time the wait began, not where it ended | `cargo test` (a test the script could not name) |
+| `wait-not-held` | `board.rs` | the CPU is not held while the board serves a VDC's access | rung 2 (`base-probe`) |
+| `wait-not-settled` | `board.rs` | after the wait the devices are not caught up to the time it ended | `cargo test` (a test the script could not name) |
+| `decode-again-repeats-accesses` | `sockets.rs` | a decode made again after a wait repeats the VDC accesses made before the stop | `cargo test` (`a_decode_made_again_after_a_wait_does_not_repeat_the_accesses_made_before_it`) |
+| `accesses-after-a-stop-made` | `sockets.rs` | the VDC accesses after a stop are made before the wait, not after it | `cargo test` (a test the script could not name) |
+| `level-table-built-once` | `psg/chip.rs` | `silent_units` set after construction leaves the host-rate level table (v0.1.0) | `cargo test` (`silent_units_set_on_an_instance_reaches_the_host_rate_output`) |
 | `timer-prescaler-not-reset` | `cpu_io/timer.rs` | the first tick after an enable comes a CPU cycle early (U24) | rung 2 (`base-probe`) |
 | `timer-window-a-clock-long` | `cpu_io/timer.rs` | the count reads $7F one master clock longer after an underflow (C25) | rung 2 (`base-probe`) |
 | `irq-status-buffer-bits` | `cpu_io/irq_ctl.rs` | $1402/$1403 return only four bits of the I/O buffer | rung 2 (`base-probe`) |
@@ -27,7 +38,7 @@ library, rung 6.
 | `multitap-counts-under-clr` | `pads.rs` | the multitap's counter steps on a SEL rise while CLR is high | rung 5 (`sock-multitap-probe`) |
 | `card-384k-upper-mirror` | `cards.rs` | a 384 KiB card's banks $40-$7F show the wrong part of the image | rung 5 (`sock-card-bonk`) |
 | `tennokoe-lock-inverted` | `cards.rs` | the Tennokoe card's RAM unlocks on a zero | rung 5 (`sock-tennokoe-probe`) |
-| `populous-ram-two-banks` | `cards.rs` | the Populous card's RAM takes writes in two banks of its four | rung 4, smoke (`lib-Populous (Japan) (En)`) |
+| `populous-ram-two-banks` | `cards.rs` | the Populous card's RAM takes writes in two banks of its four | rung 4 (smoke) (`lib-Populous (Japan) (En)`) |
 | `palette-lsb-clears-bit-8` | `vce.rs` | a write of a colour's low byte clears its ninth bit | rung 2 (`covell`) |
 | `palette-write-a-dot-late` | `video.rs` | a palette write made exactly at a dot's start shows from the next dot | rung 2 (`covell`) |
 | `line-count-ignores-the-machine-row` | `video.rs` | `lines_follow_vce_bit2 = false` still follows VCE bit 2 (C3) | rung 5 (`sw-no-bit2-lines-probe`) |
@@ -56,10 +67,21 @@ library, rung 6.
 | `work-ram-half-size` | `pagetable.rs` | work RAM mirrors every 4 KiB | rung 2 (`covell`) |
 | `interrupt-registers-unmapped` | `hardware_page.rs` | $FF:1400-17FF answers $FF | rung 2 (`base-probe`) |
 | `state-forgets-the-capture` | `state.rs` | a loaded state keeps the picture rows of the system it is loaded into | `cargo test` (`a_loaded_run_continues_bus_cycle_for_bus_cycle`) |
-| `state-forgets-the-pad-latch` | `state.rs` | a loaded state keeps the SEL/CLR latch of the system it is loaded into | rung 6 (`pic-Aero Blasters (USA)`) |
+| `state-drops-the-polled-lines` | `state.rs` | a state does not carry the lines the CPU's last poll saw (huc6280-python 0.4.0) | `cargo test` (a test the script could not name) |
+| `state-forgets-the-pad-latch` | `state.rs` | a loaded state keeps the SEL/CLR latch of the system it is loaded into | `cargo test` (a test the script could not name) |
 | `state-takes-the-timer-switch` | `state.rs` | a loaded state overwrites the system's own `underflow_window_mclk` | `cargo test` (`loading_keeps_the_wiring_and_the_switches`) |
 | `no-reset-requested` | `system.rs` | the CPU is put on the board without a reset: no start sequence, no reset vector | rung 2 (`covell`) |
 | `seed-low-bits` | `mt.rs` | a seeded power-on takes the low bits of each random word | rung 5 (`sock-path-rtype`) |
+
+**56 caught, 0 missed**: 30 by rung 2 (Covell's test or the probe card), 12
+by rung 5, 1 by the smoke list, 13 by the unit tests. Rung 3, the whole
+library and rung 6 come late in the order and were never needed. The probe
+card's waited-on DMA (`base-probe`) catches three of the six wait faults; the
+other three (where the served access is made, the settle after the wait, the
+accesses after a stop) are caught by the unit tests (`tests/vdc_wait.rs` pins
+the reference's two wait tests and the two-VDC decode).
+
+What the 0.1.0 record said:
 
 **48 caught, 0 missed**: 28 by rung 2 (Covell's test or the probe card), 13
 by rung 5, 1 by the smoke list, 5 by the unit tests (`tests/sockets.rs` and
