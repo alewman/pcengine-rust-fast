@@ -31,6 +31,12 @@
 //!   `vertical_at_line_start`, the DMA's `resume`) and so does this; its class attributes (the
 //!   PSG's switches, the timer's window) are not in a state there, and a loaded state keeps
 //!   the system's own here too, with the VCE's host-side `rgb_table`.
+//! - **Old states are refused, not converted.** The reference's JSON names each field, so it
+//!   loads a state of 0.1.0 with the CPU's new `polled_irq_lines` as `None` (pcengine-python
+//!   0.2.0). bincode names nothing: a body of version 1 does not decode as version 2, and the
+//!   version check refuses it first, with the system untouched (tests/state.rs). A converter
+//!   would carry the old layouts of the CPU and the PSG for states nobody keeps (the crate has
+//!   no users who save yet); a state is for the build that made it.
 //! - **A snapshot pair** the reference does not have: `save_snapshot` / `load_snapshot`, the
 //!   body alone with no header, no check and no compression, for run-ahead (a state taken and
 //!   put back within one run of one system). Loading a snapshot into a system built another
@@ -53,7 +59,10 @@ use crate::vdc::Vdc;
 use crate::video::{Capture, Timeline};
 
 pub const MAGIC: &[u8; 8] = b"PCERSTAT";
-pub const VERSION: u32 = 1;
+/// 2 since 0.2.0: the CPU's state gained `polled_irq_lines` (huc6280-rust 0.2.0), the PSG lost
+/// `acc_steps` and gained `levels_units`. A state of version 1 is refused, not converted (see the
+/// module's notes).
+pub const VERSION: u32 = 2;
 
 /// huc6280-rust's `CpuState`, field for field (it does not derive serde).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,6 +88,8 @@ struct Cpu {
     polled_maskable_interrupt: Option<bool>,
     polled_non_maskable_interrupt: Option<bool>,
     skipped_poll: bool,
+    /// huc6280-rust 0.2.0 (huc6280-python 0.4.0, its issue 0005)
+    polled_irq_lines: Option<u8>,
 }
 
 impl From<CpuState> for Cpu {
@@ -105,6 +116,7 @@ impl From<CpuState> for Cpu {
             polled_maskable_interrupt: s.polled_maskable_interrupt,
             polled_non_maskable_interrupt: s.polled_non_maskable_interrupt,
             skipped_poll: s.skipped_poll,
+            polled_irq_lines: s.polled_irq_lines, // saved
         }
     }
 }
@@ -133,6 +145,7 @@ impl From<&Cpu> for CpuState {
             polled_maskable_interrupt: s.polled_maskable_interrupt,
             polled_non_maskable_interrupt: s.polled_non_maskable_interrupt,
             skipped_poll: s.skipped_poll,
+            polled_irq_lines: s.polled_irq_lines,
         }
     }
 }
@@ -259,7 +272,11 @@ fn apply(system: &mut System, body: Body) -> Result<(), String> {
     let rgb_table = std::mem::take(&mut board.vce.rgb_table);
     board.vce = body.vce.into_owned();
     board.vce.rgb_table = rgb_table;
+    let wiring: Vec<bool> = board.vdcs.iter().map(|vdc| vdc.serve).collect();
     board.vdcs = body.vdcs.into_owned();
+    for (vdc, serve) in board.vdcs.iter_mut().zip(wiring) {
+        vdc.serve = serve; // wiring, not state
+    }
     let mut psg = body.psg.into_owned();
     psg.keep_configuration(&board.psg);
     board.psg = psg;

@@ -240,8 +240,6 @@ pub struct PopulousCard {
 }
 
 impl PopulousCard {
-    pub const RAM_BANKS: [u32; 4] = [0x40, 0x41, 0x42, 0x43];
-
     pub fn new(data: &[u8]) -> Result<PopulousCard, String> {
         let rom = RomCard::new(data)?;
         let identity = rom_identity("PopulousCard", &rom.data);

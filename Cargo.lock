@@ -93,8 +93,7 @@ dependencies = [
 
 [[package]]
 name = "huc6280-rust-fast"
-version = "0.1.0"
-source = "git+https://github.com/alewman/huc6280-rust-fast?rev=2f4d4d2ba11688495746cdd80a2b10afaeaa81dc#2f4d4d2ba11688495746cdd80a2b10afaeaa81dc"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -131,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "pcengine-rust-fast"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "flate2",

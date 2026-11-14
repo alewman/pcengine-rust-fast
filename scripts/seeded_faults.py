@@ -71,6 +71,50 @@ FAULTS = {
         "",
         "an interrupt line an access changed is seen by the CPU a cycle later",
     ),
+    # board.rs and sockets.rs: the VDC's wait (the reference's issue 0004, pcengine-python 0.2.0)
+    "vdc-waits-alone": (
+        "board.rs",
+        "vdc.serve = true; // the reference's `serve=self._serve_vram`",
+        "vdc.serve = false;",
+        "a waiting VDC runs alone to the transfer's end, lines ahead of the line clock (v0.1.0)",
+    ),
+    "served-access-made-at-the-old-time": (
+        "board.rs",
+        "self.vdc_access.again(index, served.max(mclk));",
+        "self.vdc_access.again(index, mclk);",
+        "the access a VDC waited for is made at the time the wait began, not where it ended",
+    ),
+    "wait-not-held": (
+        "board.rs",
+        "            self.held += served - mclk;\n",
+        "",
+        "the CPU is not held while the board serves a VDC's access",
+    ),
+    "wait-not-settled": (
+        "board.rs",
+        "        self.settle(now);\n        now\n",
+        "        now\n",
+        "after the wait the devices are not caught up to the time it ended",
+    ),
+    "decode-again-repeats-accesses": (
+        "sockets.rs",
+        "if self.cursor < self.log.len() {",
+        "if false && self.cursor < self.log.len() {",
+        "a decode made again after a wait repeats the VDC accesses made before the stop",
+    ),
+    "accesses-after-a-stop-made": (
+        "sockets.rs",
+        "            return Some(0xFF); // after a stop: made in the next pass\n",
+        "",
+        "the VDC accesses after a stop are made before the wait, not after it",
+    ),
+    # psg/chip.rs (issue 0004 item 2)
+    "level-table-built-once": (
+        "psg/chip.rs",
+        "if self.levels_units != Some(units) {",
+        "if self.levels_units.is_none() {",
+        "`silent_units` set after construction leaves the host-rate level table (v0.1.0)",
+    ),
     # cpu_io
     "timer-prescaler-not-reset": (
         "cpu_io/timer.rs",
@@ -307,6 +351,12 @@ FAULTS = {
         "    board.capture = body.capture.into_owned();\n",
         "",
         "a loaded state keeps the picture rows of the system it is loaded into",
+    ),
+    "state-drops-the-polled-lines": (
+        "state.rs",
+        "polled_irq_lines: s.polled_irq_lines, // saved",
+        "polled_irq_lines: None,",
+        "a state does not carry the lines the CPU's last poll saw (huc6280-python 0.4.0)",
     ),
     "state-forgets-the-pad-latch": (
         "state.rs",

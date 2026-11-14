@@ -1,6 +1,6 @@
 [package]
 name = "pcengine-rust-fast"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 description = "A speed fork of pcengine-rust, the Rust PC Engine / TurboGrafx-16 board, held in lockstep with it"
@@ -14,10 +14,12 @@ name = "pcengine_rust"
 
 [dependencies]
 # huc6280-rust-fast (crate huc6280): the speed fork of huc6280-rust, held in
-# lockstep with it, so with huc6280-python v0.3.0 (bf20330), the revision
-# pcengine-python v0.1.0 pins. The parent board, pcengine-rust, uses
-# huc6280-rust itself; the API is the same.
-huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "2f4d4d2ba11688495746cdd80a2b10afaeaa81dc" }
+# lockstep with it, so with huc6280-python v0.4.0 (265df88), the revision
+# pcengine-python v0.2.0 pins. The parent board, pcengine-rust, uses
+# huc6280-rust itself; the API is the same. By path until huc6280-rust-fast
+# 90711f2 is on GitHub; then:
+# huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "90711f2ab3511456b0fb01b32d3e96253bbba68d" }
+huc6280 = { package = "huc6280-rust-fast", path = "../huc6280-rust-fast" }
 # Save states (src/state.rs) and the card's identity in them.
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"

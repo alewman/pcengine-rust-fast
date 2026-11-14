@@ -259,3 +259,32 @@ fn a_state_of_a_machine_built_another_way_is_refused() {
     // and each loads into its own kind
     load_state(&mut build(true, false, 1, false), &with_port).unwrap();
 }
+
+/// A state saved by pcengine-rust 0.1.0 (format version 1, before huc6280-rust 0.2.0 gave the
+/// CPU's state `polled_irq_lines`) from `program()` after one frame: refused cleanly, not
+/// converted (state.rs).
+#[test]
+fn a_state_of_the_previous_format_is_refused() {
+    let old = include_bytes!("data/state-v1.pcestate");
+    let mut system = system_with(rom(&program()), PC_ENGINE);
+    system.run_frame();
+    let error = refusal(&mut system, old);
+    assert!(
+        error.contains("version 1, not 2"),
+        "unexpected refusal: {error}"
+    );
+}
+
+/// The VDCs' wiring to the board's wait (issue 0004) is not state: a loaded state keeps it.
+#[test]
+fn loading_keeps_the_vdcs_wired_to_the_boards_wait() {
+    let mut system = system_with(rom(&program()), PC_ENGINE);
+    system.run_frame();
+    let state = save_state(&system);
+    let mut other = system_with(rom(&program()), PC_ENGINE);
+    load_state(&mut other, &state).unwrap();
+    assert!(other.board().vdcs.iter().all(|vdc| vdc.serve));
+    let snapshot = save_snapshot(&system);
+    load_snapshot(&mut other, &snapshot).unwrap();
+    assert!(other.board().vdcs.iter().all(|vdc| vdc.serve));
+}

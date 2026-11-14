@@ -208,10 +208,13 @@ pub struct Psg {
     // host-rate output (a box average of the step stream; outside the reference path)
     pub rate_hz: f64,
     pub gain: f64,
-    /// up to 30 + 31 + 30
+    /// up to 30 + 31 + 30; rebuilt when `switches.silent_units` changes (issue 0004: the
+    /// reference's psg_compare.py sets the switches on an instance after construction)
     levels: Vec<f64>,
+    /// the `silent_units` `levels` was built for (the reference's `_levels_units`; `None` is its
+    /// -1, never built)
+    levels_units: Option<usize>,
     acc: [f64; 2],
-    acc_steps: f64,
     phase: f64,
     out: Vec<(i32, i32)>,
     noise_period: [i64; 6],
@@ -361,15 +364,6 @@ pub const LEVEL_BITS: [u64; 128] = [
 
 impl Psg {
     pub fn new(rate_hz: f64, switches: PsgSwitches) -> Psg {
-        let levels = (0..128)
-            .map(|u| {
-                if u < switches.silent_units {
-                    f64::from_bits(LEVEL_BITS[u])
-                } else {
-                    0.0
-                }
-            })
-            .collect();
         let mut psg = Psg {
             switches,
             channels: Default::default(),
@@ -380,13 +374,14 @@ impl Psg {
             step: 0,
             rate_hz,
             gain: 1.0,
-            levels,
+            levels: Vec::new(),
+            levels_units: None,
             acc: [0.0, 0.0],
-            acc_steps: 0.0,
             phase: 0.0,
             out: Vec::new(),
             noise_period: [0; 6],
         };
+        psg.level_table();
         for ch in 0..6 {
             psg.channels[ch].counter = psg.period(ch);
         }
@@ -401,6 +396,7 @@ impl Psg {
     pub(crate) fn keep_configuration(&mut self, live: &Psg) {
         self.switches = live.switches;
         self.levels = live.levels.clone();
+        self.levels_units = live.levels_units;
     }
 
     // -- derived values -------------------------------------------------------------------------
@@ -493,8 +489,7 @@ impl Psg {
             return;
         }
         if reg == 8 {
-            self.lfo_frequency = value;
-            // counters pick up a changed period at their next reload
+            self.lfo_frequency = value; // counters pick up a changed period at their next reload
             return;
         }
         if reg == 9 {
@@ -671,11 +666,12 @@ impl Psg {
         if !self.switches.render_audio {
             return;
         }
+        let levels = self.level_table();
         let (mut left, mut right) = (0.0f64, 0.0f64);
         for &(sample, ul, ur) in snapshot {
             if sample >= 0 {
-                left += self.levels[ul] * (sample - 16) as f64;
-                right += self.levels[ur] * (sample - 16) as f64;
+                left += levels[ul] * (sample - 16) as f64;
+                right += levels[ur] * (sample - 16) as f64;
             }
         }
         let scale = self.gain / (6 * 16) as f64;
@@ -698,6 +694,24 @@ impl Psg {
                 self.phase = 0.0;
             }
         }
+    }
+
+    /// Amplitude by attenuation units (1.5 dB each), silent from `silent_units` on (C14).
+    fn level_table(&mut self) -> &[f64] {
+        let units = self.switches.silent_units;
+        if self.levels_units != Some(units) {
+            self.levels_units = Some(units);
+            self.levels = (0..128)
+                .map(|u| {
+                    if u < units {
+                        f64::from_bits(LEVEL_BITS[u])
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+        }
+        &self.levels
     }
 
     /// Stereo samples at `rate_hz` up to `mclk` since the last call (a box average of the

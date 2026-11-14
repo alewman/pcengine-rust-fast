@@ -30,7 +30,7 @@ fn option(value: Option<bool>) -> &'static str {
 pub fn cpu_text(s: &CpuState) -> String {
     let mpr: String = s.mpr.iter().map(|byte| format!("{byte:02x}")).collect();
     format!(
-        "{:02x},{:02x},{:02x},{:02x},{:04x},{:02x},{},{},{:02x},{}{}{},{},{}{}{}{},{},{},{},{}",
+        "{:02x},{:02x},{:02x},{:02x},{:04x},{:02x},{},{},{:02x},{}{}{},{},{}{}{}{},{},{},{},{},{}",
         s.a,
         s.x,
         s.y,
@@ -52,6 +52,8 @@ pub fn cpu_text(s: &CpuState) -> String {
         option(s.polled_maskable_interrupt),
         option(s.polled_non_maskable_interrupt),
         s.skipped_poll as u8,
+        s.polled_irq_lines
+            .map_or_else(|| "-".to_string(), |lines| lines.to_string()),
     )
 }
 

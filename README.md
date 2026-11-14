@@ -3,8 +3,8 @@
 A speed fork of [pcengine-rust](https://github.com/alewman/pcengine-rust), the
 Rust **PC Engine / TurboGrafx-16** board (itself transcribed from, and proven
 equivalent to, [pcengine-python](https://github.com/alewman/pcengine-python)
-`v0.1.0`), forked at `49e3d48` and merged with its publication cleanup at
-`4dcde1f`. It is **held in lockstep with it**: every change must leave this
+`v0.2.0`), forked at `49e3d48` and merged with pcengine-rust 0.2.0 at
+`194c120`. It is **held in lockstep with it**: every change must leave this
 board's traces identical to the base board's on every case (and so to the
 reference's), and must measure faster, or it is not kept. Its CPU is
 [huc6280-rust-fast](https://github.com/alewman/huc6280-rust-fast), the speed
@@ -28,23 +28,25 @@ pcengine-rust changes one line, its dependency.
 
 ## Status
 
-**2026-11-13: eleven board changes kept and the CPU swapped for its speed
-fork; the gate green.** About **x4.3** over the fork point on the board's own
-changes and **x1.075** more from the CPU core (under "Speed"). Gates,
-re-run on 2026-11-13 after the merge with this board on huc6280-rust-fast:
+**2026-11-13: 0.2.0, pcengine-rust 0.2.0 merged (pcengine-python `v0.2.0`,
+its issue 0004 settled) and the core at huc6280-rust-fast `90711f2`
+(huc6280-python `v0.4.0`); the gate green against the rebuilt reference
+cache.** About **x4.3** over the fork point on the board's own changes and
+**x1.075** more from the CPU core; the merge costs about **x0.954** (under
+"Speed"). Gates, re-run on 2026-11-13 after the merge:
 
 | Gate | What | Result |
 | --- | --- | --- |
-| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals, `tests/fork.rs`'s invariants, the README's example | 57 pass |
+| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals (a 0.1.0 state among them), the VDC wait (`tests/vdc_wait.rs`), `tests/fork.rs`'s invariants, the README's example | 63 pass |
 | Lockstep | every case of `scripts/cases.tsv` against the reference's traces (`external/refcache`): Covell's test, the probe card, the 18 picture-gate titles, the five PSG games, the whole library of 179 HuCards and the Street Fighter II' card, every socket, machine row and switch | 275 of 275 identical |
 | Save states | the round trip and the run-ahead pass on the 18 picture-gate titles | 18 of 18 |
-| Seeded faults | pcengine-rust's 48 and twenty on this fork's shortcuts | 68 caught, 0 missed |
+| Seeded faults | pcengine-rust's 56 and twenty on this fork's shortcuts | 76 caught, 0 missed |
 
 pcengine-rust's ladder, which this gate runs from the same cases and the
 same reference cache, is in its README (its
 [Status](https://github.com/alewman/pcengine-rust#status) and
 [How it is proven](https://github.com/alewman/pcengine-rust#how-it-is-proven));
-the reference's traces are pcengine-python's on all 275 cases, 84,200
+the reference's traces are pcengine-python `v0.2.0`'s on all 275 cases, 84,200
 frames. **Nothing here was run on a real console**: the board is proven equal
 to pcengine-python, and how close that is to the hardware is the reference's
 record.
@@ -168,6 +170,33 @@ place; here `--device lockstep-port`, the gate's test device) the board must
 call the device every cycle, and the chain is x1.713 (214.1 to 344.3 frames
 a second on Blazing Lazers).
 
+**The merge of pcengine-rust 0.2.0 (2026-11-13): x0.954.** The fork before
+the merge (`0ed0390`) against the fork after it, on one efficiency core while
+other gate work ran on the machine (`scripts/ab.py --behaviour-changed`: the
+checksums differ, because the final snapshot is in them and the state format
+changed; each build agrees with itself on every run). An A/A run of the
+first build: x1.011.
+
+| Title (600 frames) | before the merge | after | |
+| --- | ---: | ---: | ---: |
+| Blazing Lazers | 1007.1 | 996.9 | x0.990 |
+| Bonk's Adventure | 1160.8 | 1081.4 | x0.932 |
+| R-Type | 1058.4 | 1013.7 | x0.958 |
+| After Burner II | 988.0 | 954.0 | x0.966 |
+| Street Fighter II' | 983.7 | 913.4 | x0.929 |
+| all five (geometric mean) | | | **x0.954** |
+
+Split in two with a build of the old board on the new core (measurement
+only, not kept: the old board's state given `polled_irq_lines: None`): the
+core alone (huc6280-rust-fast `2f4d4d2` to `90711f2`, which records the
+interrupt lines at every access; its own Dormann measurement was x0.95)
+x0.966, and the board's part of the merge on top of it (the VDC access log
+reset at every decode, the wait check after it, the PSG's level-table check
+per emitted step, `run_to` as `step` and `settle`) x0.964. The two halves
+were measured one after the other on a busy machine and their product
+(x0.931) is below the direct x0.954: read each to about two percent. Not
+optimised here; that is the fork's next work.
+
 **The CPU core swapped for huc6280-rust-fast (2026-11-13): x1.075.** This
 tree built against huc6280-rust (`65c18df`) and against huc6280-rust-fast,
 nothing else different, on one efficiency core (load average about 11 to 14
@@ -280,10 +309,10 @@ speed, a copy of the VDC and of the timer caught up to the clock equals the
 original; and cycle by cycle with a port device that starts a DMA from its
 `catch_up`.
 
-**Seeded faults** (`scripts/seeded_faults.py`, rung 7): pcengine-rust's 48,
-each still caught by the same check, and twenty on this fork's shortcuts (at
-least one on every kept change that has code): 68 caught, 0 missed, re-run on
-2026-11-13 on huc6280-rust-fast. The table
+**Seeded faults** (`scripts/seeded_faults.py`, rung 7): pcengine-rust's 56,
+each caught by the same check as there, and twenty on this fork's shortcuts (at
+least one on every kept change that has code): 76 caught, 0 missed, on
+2026-11-13 after the merge of pcengine-rust 0.2.0. The table
 is in [docs/seeded-faults.md](docs/seeded-faults.md).
 
 **Measuring** on a shared machine: `pce-bench` times `run_frame` and
@@ -352,7 +381,9 @@ filed in pcengine-python as
 [issue 0004](https://github.com/alewman/pcengine-python/blob/main/docs/issues/0004-findings-from-the-rust-port.md);
 the CPU core's are huc6280-python's
 [issue 0005](https://github.com/alewman/huc6280-python/blob/main/docs/issues/0005-interrupt-edge-cases-found-by-the-rust-port.md).
-This fork keeps every one of them, as the lockstep requires.
+Both are **settled** (pcengine-python `v0.2.0`, huc6280-python `v0.4.0`), and
+this fork follows the settlements through the merge, as the lockstep
+requires.
 
 No GPL or LGPL source was copied, read or transcribed for this crate, and no
 emulator's source was opened. The only sources transcribed are our own MIT

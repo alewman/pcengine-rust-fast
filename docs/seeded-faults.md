@@ -79,6 +79,17 @@ interrupt lines (all three are low at power-on, which is what the CPU
 already holds). `pad6-counts-clr-level` is caught by a unit test only: on
 every pad scan the cases make, the faulty pad's count has the right parity.
 
+## 0.2.0 (2026-11-13): 76 caught, 0 missed
+
+After the merge of pcengine-rust 0.2.0, against the rebuilt reference cache: the base board's 56 (its
+48 and the eight new ones on the VDC wait, the PSG's level table and the CPU state's
+`polled_irq_lines`; pcengine-rust's docs/seeded-faults.md has their table) and this fork's twenty
+below, **76 caught, 0 missed**. The new eight are caught by the same checks as on the base board
+(`vdc-waits-alone` and `wait-not-held` by rung 2's `base-probe`, the other six by the unit tests);
+`wait-not-held` names the fork's line (`self.held += served - mclk`: the fork adds the served wait's
+hold directly, not through `Board::hold`, which also calls `touch`). Every fault of the 0.1.0 run is
+caught by the same check as then.
+
 ## This fork's twenty
 
 pcengine-rust-fast keeps the 48 above, each still caught by the same check, and adds at least

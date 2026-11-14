@@ -111,8 +111,11 @@ pub struct BoardPins<'a> {
     pub irq2: &'a mut IrqLine,
     pub(crate) held: &'a mut i64,
     /// The board's VDC instances (`machine.vdc_count` of them): the SuperGrafx's VPC claims
-    /// their pages and steers each access to one.
+    /// their pages and steers each access to one. A device makes its accesses of a VDC's port
+    /// with `vdc_read` and `vdc_write`, not by calling `Vdc::read` and `write` here, so that the
+    /// board's wait reaches them (issue 0004, `VdcAccess`).
     pub vdcs: &'a mut [Vdc],
+    pub(crate) access: &'a mut VdcAccess,
     /// The opcode of the instruction the CPU is running (`Pins::opcode`; 0 with no CPU): the
     /// VPC steers only `ST0`-`ST2`, which the bus cannot tell from stores to `$FF:0000/2/3`.
     pub opcode: u8,
@@ -127,6 +130,128 @@ impl BoardPins<'_> {
     pub fn hold(&mut self, clocks: i64) {
         *self.held += clocks;
     }
+
+    /// VDC `index`'s `read(offset, mclk)`, through the board's wait (`VdcAccess`).
+    pub fn vdc_read(&mut self, index: usize, offset: u32, mclk: i64) -> u8 {
+        self.access.read(self.vdcs, index, offset, mclk)
+    }
+
+    /// VDC `index`'s `write(offset, value, mclk)`, through the board's wait (`VdcAccess`).
+    pub fn vdc_write(&mut self, index: usize, offset: u32, value: u8, mclk: i64) {
+        self.access.write(self.vdcs, index, offset, value, mclk);
+    }
+}
+
+/// The VDC accesses of one decode, for the board's wait (issue 0004).
+///
+/// In the reference a VDC access that has to wait calls the board (`Board._serve_vram`), which
+/// runs every device event by event, the line clock and the pixel path included, until the
+/// access is served, and the access then goes on; a device that touches two VDCs in one access
+/// (the lockstep pixel path writes both on `ST0`-`ST2`) touches the second after the first's
+/// wait. A Rust device cannot be called again by the board while it is in the middle of an
+/// access, so the access *stops* there instead (vdc/chip.rs, `Vdc::serve_wanted`): every later
+/// VDC access of the decode is skipped (it answers $FF to a device whose access is thrown
+/// away), the board serves the chip, and the board makes the whole decode again. In the new
+/// pass the accesses made before the stop are not made twice: their results are handed back
+/// from the log, in order; the stopped access is made at the time the wait ended; the later
+/// ones are made as the reference makes them after its wait, with the device's own `mclk`.
+/// This asks of a device that an access whose VDC access stops changes nothing of its own
+/// (the VPC's and the lockstep devices' do not); a device's decode is deterministic.
+#[derive(Clone, Debug, Default)]
+pub struct VdcAccess {
+    /// The results of the VDC accesses of this decode, in order (0 for a write).
+    log: Vec<u8>,
+    /// How many of `log` this pass has handed back.
+    cursor: usize,
+    /// The VDC whose access stopped in this pass.
+    stopped: Option<usize>,
+    /// The VDC served and the time its stopped access is made at in the next pass.
+    again: Option<(usize, i64)>,
+}
+
+impl VdcAccess {
+    /// A new decode.
+    pub(crate) fn begin(&mut self) {
+        self.log.clear();
+        self.cursor = 0;
+        self.stopped = None;
+        self.again = None;
+    }
+
+    /// The VDC whose access stopped to wait in the pass just made, if any.
+    #[inline]
+    pub(crate) fn stopped(&self) -> Option<usize> {
+        self.stopped
+    }
+
+    /// The next pass of the decode, after VDC `index` was served at `at`.
+    pub(crate) fn again(&mut self, index: usize, at: i64) {
+        self.cursor = 0;
+        self.stopped = None;
+        self.again = Some((index, at));
+    }
+
+    /// `None` to make the access now (at the time it should be made at), or the answer to hand
+    /// back without making it.
+    #[inline]
+    fn enter(&mut self, index: usize, mclk: &mut i64) -> Option<u8> {
+        if self.stopped.is_some() {
+            return Some(0xFF); // after a stop: made in the next pass
+        }
+        if self.cursor < self.log.len() {
+            let value = self.log[self.cursor];
+            self.cursor += 1;
+            return Some(value); // made before a stop in an earlier pass
+        }
+        if let Some((served, at)) = self.again.take() {
+            debug_assert_eq!(
+                served, index,
+                "the stopped access comes first after the log"
+            );
+            *mclk = at;
+        }
+        None
+    }
+
+    #[inline]
+    fn leave(&mut self, vdc: &Vdc, index: usize, value: u8) -> u8 {
+        if vdc.serve_wanted {
+            self.stopped = Some(index);
+            return 0xFF;
+        }
+        self.log.push(value);
+        self.cursor += 1;
+        value
+    }
+
+    pub(crate) fn read(
+        &mut self,
+        vdcs: &mut [Vdc],
+        index: usize,
+        offset: u32,
+        mut mclk: i64,
+    ) -> u8 {
+        if let Some(value) = self.enter(index, &mut mclk) {
+            return value;
+        }
+        let value = vdcs[index].read(offset, mclk);
+        self.leave(&vdcs[index], index, value)
+    }
+
+    pub(crate) fn write(
+        &mut self,
+        vdcs: &mut [Vdc],
+        index: usize,
+        offset: u32,
+        value: u8,
+        mut mclk: i64,
+    ) {
+        if self.enter(index, &mut mclk).is_some() {
+            return;
+        }
+        vdcs[index].write(offset, value, mclk);
+        self.leave(&vdcs[index], index, 0);
+    }
 }
 
 /// A `BoardPins` with no board behind it: for a device's own tests (this crate's and an
@@ -137,6 +262,7 @@ pub struct DetachedPins {
     pub held: i64,
     pub vdcs: Vec<Vdc>,
     pub opcode: u8,
+    pub access: VdcAccess,
 }
 
 impl DetachedPins {
@@ -145,6 +271,7 @@ impl DetachedPins {
             irq2: &mut self.irq2,
             held: &mut self.held,
             vdcs: &mut self.vdcs,
+            access: &mut self.access,
             opcode: self.opcode,
             card: None,
         }

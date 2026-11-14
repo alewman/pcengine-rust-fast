@@ -356,9 +356,13 @@ def build() -> bytes:
     a.psg(4, 0x1F)  # channel 1 keyed off and on under the LFO: its first period is modulated
     a.psg(4, 0x9F)
     frames(4)
-    # C18: channel 2 off under the LFO
+    # C18: channel 2 off under the LFO; its wave rewritten while it is off, so the sample it
+    # holds is not 16 (no modulation) whatever its index was when the key-off came, and it still
+    # changes when it plays (C23 below)
     a.psg(0, 1)
     a.psg(4, 0x1F)
+    for i in range(32):
+        a.psg(6, 31 if i % 2 else 0)
     frames(6)
     # C23: LF TRG with LF CTL 0, channel 2 on
     a.psg(4, 0x9F)

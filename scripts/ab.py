@@ -70,6 +70,9 @@ def main() -> int:
     parser.add_argument("--frames", type=int, default=600)
     parser.add_argument("--cpu", type=int, default=31)
     parser.add_argument("--only")
+    parser.add_argument("--behaviour-changed", action="store_true",
+                        help="compare builds that compute different things (each must agree with itself): "
+                        "a merge that changed the board's behaviour, measured against the build before it")
     parser.add_argument("--extra", default="", help="more pce-bench arguments for every title (--device lockstep-port)")
     args = parser.parse_args()
     titles = [(n, a, [*x, *args.extra.split()]) for n, a, x in TITLES if not args.only or re.search(args.only, n)]
@@ -87,8 +90,12 @@ def main() -> int:
             order = [("a", args.a), ("b", args.b)] if r % 2 == 0 else [("b", args.b), ("a", args.a)]
             for side, binary in order:
                 (a_runs if side == "a" else b_runs).append(bench(binary, card, extra, args.frames, args.cpu))
-        checks = {c for _, c in a_runs} | {c for _, c in b_runs}
-        if len(checks) != 1:
+        a_checks, b_checks = {c for _, c in a_runs}, {c for _, c in b_runs}
+        checks = a_checks | b_checks
+        if len(a_checks) != 1 or len(b_checks) != 1:
+            print(f"{name}: a build's checksum changed from run to run {sorted(checks)}")
+            return 1
+        if len(checks) != 1 and not args.behaviour_changed:
             print(f"{name}: checksums differ {sorted(checks)}: the builds are not equivalent")
             return 1
         a = max(f for f, _ in a_runs)

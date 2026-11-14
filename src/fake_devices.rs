@@ -498,18 +498,18 @@ impl PixelPath for LockstepPath {
 
     fn read(&mut self, address: u32, mclk: i64, pins: &mut BoardPins) -> u8 {
         let port = address & 3;
-        let value = pins.vdcs[0].read(port, mclk);
+        let value = pins.vdc_read(0, port, mclk);
         if port == 0 {
-            pins.vdcs[1].read(port, mclk);
+            pins.vdc_read(1, port, mclk);
         }
         value
     }
 
     fn write(&mut self, address: u32, value: u8, mclk: i64, pins: &mut BoardPins) {
         let port = address & 3;
-        pins.vdcs[0].write(port, value, mclk);
+        pins.vdc_write(0, port, value, mclk);
         if ST_OPCODES.contains(&pins.opcode) {
-            pins.vdcs[1].write(port, value, mclk);
+            pins.vdc_write(1, port, value, mclk);
         }
     }
 

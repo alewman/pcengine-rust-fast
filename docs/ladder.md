@@ -106,3 +106,15 @@ are not a state, another version, another machine row, another card (and
 the same image behind another mapper, and an empty slot), a port device or
 a pad the state has not, a second VDC; a refused state leaves the system
 untouched.
+
+## 0.2.0 (2026-11-13)
+
+The ladder was run again against pcengine-python `v0.2.0` (`4c32f26`, its issue 0004 settled)
+with huc6280-rust 0.2.0, the reference cache rebuilt (the old one kept as
+`external/refcache-v0.1.0`): 275 of 275 identical on the first run, 37 of 37 switches and devices
+change a case, rung 6 18 of 18. The CPU text of a frame line now ends with `polled_irq_lines`
+(`-` for `None`). The probe card's C18 section rewrites channel 2's wave while it is off, so the
+sample it holds is never 16 whatever the timing (the board's new VDC wait moved the probe's
+timeline, and the held sample had become 16, so `lfo_requires_ch2_on` changed nothing). New unit
+tests in `tests/vdc_wait.rs` and `tests/state.rs`; the new faults are in
+[seeded-faults.md](seeded-faults.md).

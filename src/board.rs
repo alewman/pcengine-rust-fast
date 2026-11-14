@@ -23,6 +23,9 @@
 //! - **The pixel path** is the board's field (`pixel_path`); the capture is handed the mixed
 //!   row. **The mixer** is handed the sources in the reference's order: the PSG, the port
 //!   device's own, then `audio_sources`.
+//! - **The VDC's wait** (issue 0004): the reference's VDC calls the board's `_serve_vram` from
+//!   inside the access; here the access stops at that point and the board serves the chip and
+//!   makes the decode again (`page_read`, `page_write`, `sockets::VdcAccess`, vdc/chip.rs).
 //! - **`bus_log`** is the tap the reference's scripts make by wrapping the three callables
 //!   (`scripts/state_roundtrip.py`, `observe`): when it is `Some`, every cycle appends the same
 //!   words.
@@ -51,7 +54,7 @@ use crate::pagetable::{Handler, PageTable, Ram};
 use crate::psg::{Psg, PsgSwitches};
 use crate::sockets::{
     AudioSource, BoardPins, Card, CardSlot, ControllerPort, DirectPath, IrqLine, PixelPath,
-    PortDevice, ResetKind, VideoTiming,
+    PortDevice, ResetKind, VdcAccess, VideoTiming,
 };
 use crate::vce::Vce;
 use crate::vdc::Vdc;
@@ -116,6 +119,8 @@ pub struct Board {
     /// first; the others are run, synced and read for pixels and IRQ1 by the board, but have
     /// no decode of their own: an add-on (the SuperGrafx's VPC) claims their pages.
     pub vdcs: Vec<Vdc>,
+    /// The VDC accesses of the decode being made (issue 0004; sockets.rs).
+    pub(crate) vdc_access: VdcAccess,
     pub psg: Psg,
     pub cpu_io: CpuIo,
     pub ram: Ram,
@@ -155,7 +160,7 @@ pub struct Board {
     /// hands the capture the VDC's row itself.
     pub(crate) direct_path: bool,
     /// `touch` was called: `plain_card`, `direct_path` and the loan below are decided again
-    /// when the board next runs (`settle`), after whatever the host is changing.
+    /// when the board next runs (`decide`), after whatever the host is changing.
     pub(crate) stale: bool,
     /// A `RomCard`'s image, on loan to the board while it runs (`lend_rom`): the card's
     /// `data` is empty meanwhile, and `touch` gives it back before anything can look.
@@ -172,12 +177,14 @@ impl Board {
         let vce = Vce::new(rng.as_mut());
         let vdcs: Vec<Vdc> = (0..machine.vdc_count)
             .map(|_| {
-                Vdc::new(
+                let mut vdc = Vdc::new(
                     rng.as_mut(),
                     options.vblank_dots,
                     options.vertical_at_line_start,
                     options.dma_resumes,
-                )
+                );
+                vdc.serve = true; // the reference's `serve=self._serve_vram`
+                vdc
             })
             .collect();
         if vdcs.is_empty() {
@@ -224,6 +231,7 @@ impl Board {
             irq2: IrqLine::new("IRQ2"),
             vce,
             vdcs,
+            vdc_access: VdcAccess::default(),
             psg,
             cpu_io,
             ram,
@@ -282,7 +290,7 @@ impl Board {
 
     /// What `touch` left to decide, at the first cycle after it (the host has finished).
     #[cold]
-    fn settle(&mut self) {
+    fn decide(&mut self) {
         self.stale = false;
         self.plain_card = self.card_is_plain();
         self.direct_path = self.pixel_path.as_any_mut().is::<DirectPath>();
@@ -402,13 +410,61 @@ impl Board {
         self.port.as_ref().is_some_and(|port| port.present())
     }
 
-    /// The reference's `pages.read`: one decode for every bus master.
+    /// The reference's `pages.read`: one decode for every bus master. A VDC access that stops
+    /// to wait (`Vdc::serve_wanted`) is served and the decode made again (issue 0004).
     pub fn page_read(&mut self, address: u32, mclk: i64) -> u8 {
+        self.vdc_access.begin();
+        loop {
+            let value = self.decode_read(address, mclk);
+            match self.vdc_waiting() {
+                None => return value,
+                Some(index) => self.serve_access(index, mclk),
+            }
+        }
+    }
+
+    /// The reference's `pages.write`; a VDC's wait as in `page_read`.
+    pub fn page_write(&mut self, address: u32, value: u8, mclk: i64) {
+        self.vdc_access.begin();
+        loop {
+            self.decode_write(address, value, mclk);
+            match self.vdc_waiting() {
+                None => return,
+                Some(index) => self.serve_access(index, mclk),
+            }
+        }
+    }
+
+    /// The VDC whose access stopped to wait, if any: as `VdcAccess` saw it, or (a device that
+    /// called `Vdc::read` or `write` itself, not `BoardPins::vdc_read` or `vdc_write`) as the
+    /// chip says; such an access is made again with the device's `mclk`.
+    #[inline]
+    fn vdc_waiting(&self) -> Option<usize> {
+        self.vdc_access
+            .stopped()
+            .or_else(|| self.vdcs.iter().position(|vdc| vdc.serve_wanted))
+    }
+
+    /// The rest of the reference's `Vdc._data_access` with `serve` wired: `served =
+    /// serve(chip)`, the CPU held for `served - mclk` if positive, and the stopped access made at
+    /// `max(served, mclk)` when the decode is made again.
+    fn serve_access(&mut self, index: usize, mclk: i64) {
+        self.vdcs[index].serve_wanted = false;
+        let served = self.serve_vram(index);
+        if served > mclk {
+            // The fork: not `hold`, whose `touch` is for a hold left from outside an access;
+            // `finish_access` applies this one and recomputes the horizon.
+            self.held += served - mclk;
+        }
+        self.vdc_access.again(index, served.max(mclk));
+    }
+
+    fn decode_read(&mut self, address: u32, mclk: i64) -> u8 {
         let address = address & ADDRESS_MASK;
         match self.pages.handler(address) {
             Handler::Unmapped => 0xFF,
             Handler::Ram => self.ram.read(address),
-            Handler::Vdc => self.vdcs[0].read(address & 3, mclk),
+            Handler::Vdc => self.vdc_access.read(&mut self.vdcs, 0, address & 3, mclk),
             Handler::Vce => self.vce.read(address & 7, mclk),
             Handler::CpuIo => {
                 let cd_attached = self.cd_attached();
@@ -421,6 +477,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -428,6 +485,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: None,
                 };
@@ -443,6 +501,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -450,6 +509,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: slot.card.as_deref_mut(),
                 };
@@ -465,6 +525,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -472,6 +533,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: slot.card.as_deref_mut(),
                 };
@@ -480,13 +542,14 @@ impl Board {
         }
     }
 
-    /// The reference's `pages.write`.
-    pub fn page_write(&mut self, address: u32, value: u8, mclk: i64) {
+    fn decode_write(&mut self, address: u32, value: u8, mclk: i64) {
         let address = address & ADDRESS_MASK;
         match self.pages.handler(address) {
             Handler::Unmapped => {}
             Handler::Ram => self.ram.write(address, value),
-            Handler::Vdc => self.vdcs[0].write(address & 3, value, mclk),
+            Handler::Vdc => self
+                .vdc_access
+                .write(&mut self.vdcs, 0, address & 3, value, mclk),
             Handler::Vce => self.vce.write(address & 7, value, mclk),
             Handler::CpuIo => self
                 .cpu_io
@@ -498,6 +561,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -505,6 +569,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: None,
                 };
@@ -519,6 +584,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -526,6 +592,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: slot.card.as_deref_mut(),
                 };
@@ -540,6 +607,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    vdc_access,
                     opcode,
                     ..
                 } = self;
@@ -547,6 +615,7 @@ impl Board {
                     irq2,
                     held,
                     vdcs,
+                    access: vdc_access,
                     opcode: *opcode,
                     card: slot.card.as_deref_mut(),
                 };
@@ -591,6 +660,7 @@ impl Board {
             irq2,
             held,
             vdcs,
+            vdc_access,
             opcode,
             ..
         } = self;
@@ -600,6 +670,7 @@ impl Board {
                 irq2,
                 held,
                 vdcs,
+                access: vdc_access,
                 opcode: *opcode,
                 card: None,
             },
@@ -668,7 +739,7 @@ impl Board {
     #[inline(never)]
     fn advance_events(&mut self, pins: Option<&mut Pins>) {
         if self.stale {
-            self.settle();
+            self.decide();
         }
         if self.mclk < self.events_at {
             // Only with a port device: nothing is due but its `catch_up`, which may raise
@@ -682,32 +753,63 @@ impl Board {
     }
 
     fn run_to(&mut self, target: i64) {
-        loop {
-            let line_at = self.timeline.next_line_start();
-            let row_at = self.row_end;
-            let mut vdc_at = self.vdcs[0].next_event();
-            for other in &self.vdcs[1..] {
-                if let Some(at) = other.next_event() {
-                    if vdc_at.is_none_or(|first| at < first) {
-                        vdc_at = Some(at);
-                    }
+        while self.step(target).is_some() {}
+        self.settle(target);
+    }
+
+    /// Handle the earliest event due at or before `target` and return its time; `None` if
+    /// nothing is due.
+    fn step(&mut self, target: i64) -> Option<i64> {
+        let line_at = self.timeline.next_line_start();
+        let row_at = self.row_end;
+        let mut vdc_at = self.vdcs[0].next_event();
+        for other in &self.vdcs[1..] {
+            if let Some(at) = other.next_event() {
+                if vdc_at.is_none_or(|first| at < first) {
+                    vdc_at = Some(at);
                 }
-            }
-            let timer_at = self.cpu_io.next_event();
-            if let Some(row_at) = row_at.filter(|&at| at <= target && at <= line_at) {
-                self.end_row(row_at);
-            } else if line_at <= target && vdc_at.is_none_or(|at| line_at <= at) {
-                self.new_line(line_at);
-            } else if let Some(vdc_at) = vdc_at.filter(|&at| at <= target) {
-                for chip in self.vdcs.iter_mut() {
-                    chip.catch_up(vdc_at);
-                }
-            } else if let Some(timer_at) = timer_at.filter(|&at| at <= target) {
-                self.cpu_io.catch_up(timer_at);
-            } else {
-                break;
             }
         }
+        let timer_at = self.cpu_io.next_event();
+        if let Some(row_at) = row_at
+            .filter(|&at| at <= target && at <= line_at && vdc_at.is_none_or(|vdc_at| at <= vdc_at))
+        {
+            self.end_row(row_at);
+            return Some(row_at);
+        }
+        if line_at <= target && vdc_at.is_none_or(|at| line_at <= at) {
+            self.new_line(line_at);
+            return Some(line_at);
+        }
+        if let Some(vdc_at) = vdc_at.filter(|&at| at <= target) {
+            for chip in self.vdcs.iter_mut() {
+                chip.catch_up(vdc_at);
+            }
+            return Some(vdc_at);
+        }
+        if let Some(timer_at) = timer_at.filter(|&at| at <= target) {
+            self.cpu_io.catch_up(timer_at);
+            return Some(timer_at);
+        }
+        None
+    }
+
+    /// A VDC holds the CPU (/BUSY on RDY) until its pending VRAM access is served: run every
+    /// device, the line clock included, event by event until then, and return that time. The
+    /// held clocks reach `mclk` when the access returns (`hold`); issue 0004.
+    pub(crate) fn serve_vram(&mut self, index: usize) -> i64 {
+        let mut now = self.mclk;
+        while self.vdcs[index].bsy() {
+            // the next line start always exists: this always moves
+            if let Some(at) = self.step(1 << 62) {
+                now = now.max(at);
+            }
+        }
+        self.settle(now);
+        now
+    }
+
+    fn settle(&mut self, target: i64) {
         for chip in self.vdcs.iter_mut() {
             chip.catch_up(target);
         }
@@ -723,6 +825,7 @@ impl Board {
             irq2,
             held,
             vdcs,
+            vdc_access,
             opcode,
             ..
         } = self;
@@ -731,6 +834,7 @@ impl Board {
                 irq2,
                 held,
                 vdcs,
+                access: vdc_access,
                 opcode: *opcode,
                 card: slot.card.as_deref_mut(),
             };
@@ -814,6 +918,15 @@ impl Board {
 
     // -- reset ------------------------------------------------------------------------------------
 
+    /// Tell the socket devices of a reset event; at power-on also the CPU's on-die timer,
+    /// interrupt controller, I/O port and I/O buffer.
+    ///
+    /// Not a power cycle (issue 0004): the board is built at power-on, and construction is the
+    /// power-on state of the VDC, VCE, PSG and RAM (U7: zeros, or the seed's values). None of
+    /// them is put back here: RAM has no reset; the VCE has no reset pin [wiki: VCE pinout];
+    /// the VDC has /RST [wiki: VDC pinout] but Hudson's manual says nothing of what it clears,
+    /// and the PSG manual is silent too; the PC Engine has no reset button (`ResetKind`). A host
+    /// that wants to power the machine on again builds a new `Board`.
     pub fn reset(&mut self, kind: ResetKind) {
         self.touch();
         let Board {
@@ -823,6 +936,7 @@ impl Board {
             irq2,
             held,
             vdcs,
+            vdc_access,
             opcode,
             ..
         } = self;
@@ -831,6 +945,7 @@ impl Board {
                 irq2,
                 held,
                 vdcs,
+                access: vdc_access,
                 opcode: *opcode,
                 card: None,
             };
@@ -841,6 +956,7 @@ impl Board {
                 irq2,
                 held,
                 vdcs,
+                access: vdc_access,
                 opcode: *opcode,
                 card: slot.card.as_deref_mut(),
             };
@@ -850,6 +966,7 @@ impl Board {
             irq2,
             held,
             vdcs,
+            access: vdc_access,
             opcode: *opcode,
             card: slot.card.as_deref_mut(),
         };

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The fork's gate: every change must leave this board identical to pcengine-rust.
 # cargo test, every lockstep case against the reference traces (external/refcache:
-# pcengine-rust's, which are pcengine-python's at v0.1.0 on all 275 cases), then the save-state
+# pcengine-rust's, which are pcengine-python's at v0.2.0 on all 275 cases), then the save-state
 # round trip and the run-ahead pass on the 18 picture-gate titles (rung 6). `--faults` adds the
 # seeded faults (rung 7, several minutes). At most 12 processes, niced.
 set -euo pipefail

@@ -20,6 +20,19 @@
 //! Differences forced by Rust: the reference's `hold` callable (the board's) is an accumulator
 //! here, `held`, which the board takes when the access returns (`take_hold`): the reference's
 //! board applies its own sum at the same point.
+//!
+//! **The board's wait** (issue 0004): the reference's `serve` callable, which runs the whole
+//! board from inside an access until this chip's pending access is served, cannot be called
+//! here: the board owns this chip and is borrowed for the access (and the device that made it,
+//! the SuperGrafx's VPC, is called again by the board during the wait, to mix a line). `serve`
+//! is a flag instead (wiring, not state: the board sets it on its VDCs). An access that would
+//! wait, with the flag set, stops where the reference's `_data_access` would call `serve`,
+//! having done only what the reference has done by then, and raises `serve_wanted`. The board
+//! then serves the chip (`Board::serve_vram`), holds the CPU for `served - mclk`, and makes the
+//! whole decode again; `sockets::VdcAccess` hands back the results of the VDC accesses made
+//! before the stop, makes the stopped one at `max(served, mclk)`, where nothing is pending and
+//! it runs through as the reference's continues, and makes the later ones as the reference
+//! does after its wait.
 
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +75,14 @@ pub struct Vdc {
     pub(crate) pending_write: Option<(u16, u16)>,
     pub(crate) pending_read: Option<u16>,
     pub(crate) commit_at: i64,
+    /// The board's wait (issue 0004; the reference's `serve`): set by the board on its VDCs.
+    /// Unset (a VDC on its own, with no sync to deliver), a wait runs the chip's own events
+    /// (`wait_alone`). Wiring, not state: not in a save state, and a loaded state keeps it.
+    #[serde(skip)]
+    pub serve: bool,
+    /// An access stopped at its wait for the board to serve this chip (see the module's notes).
+    #[serde(skip)]
+    pub serve_wanted: bool,
 }
 
 /// The earlier of two optional times.
@@ -113,6 +134,8 @@ impl Vdc {
             pending_write: None,
             pending_read: None,
             commit_at: 0,
+            serve: false,
+            serve_wanted: false,
         }
     }
 
@@ -304,7 +327,8 @@ impl Vdc {
         if first >= end {
             // Not reachable: a display start at or past the row's end is later than the next
             // line's sync, which drops this line's events before `render_line` runs
-            // (sequencer.rs, `seq_leave_hsync`). Kept so the slices below cannot panic.
+            // (sequencer.rs, `seq_leave_hsync`; the reference's comment cites issue 0004: the hdw
+            // event lands at most at the row's last dot). Kept so the slices below cannot panic.
             self.row = Some(row);
             return;
         }
@@ -371,7 +395,7 @@ impl Vdc {
 
     // -- the CPU's port ---------------------------------------------------------------------------
 
-    pub fn read(&mut self, offset: u32, mclk: i64) -> u8 {
+    pub fn read(&mut self, offset: u32, mut mclk: i64) -> u8 {
         self.catch_up(mclk);
         let port = offset & 3;
         if port == 0 {
@@ -383,12 +407,20 @@ impl Vdc {
             return 0;
         }
         let msb = port == 3;
+        if self.serve
+            && (self.pending_read.is_some()
+                || (msb && self.regs.select as usize == r::VRW && self.bsy()))
+        {
+            // one of the two `data_access` calls below would wait: the board serves it first
+            self.serve_wanted = true;
+            return 0xFF;
+        }
         if self.pending_read.is_some() {
             // The word the last MARR write or VRR read asked for is not in the buffer yet (it
             // waits for a CPU slot or a DMA): the CPU waits for it rather than reading the old
             // word. The manual's read sequence and both Mednafen and Mesen2 ("D&D Order of the
             // Griffon breaks without this") agree; the model's slot wait made the case possible.
-            self.data_access(mclk);
+            mclk = self.data_access(mclk);
         }
         let value = if msb {
             (self.regs.read_buffer >> 8) as u8
@@ -397,7 +429,7 @@ impl Vdc {
         };
         if msb && self.regs.select as usize == r::VRW {
             // [hw: pcetech 5.1 $02] after the MSB read MARR advances and the next word is read
-            self.data_access(mclk);
+            mclk = self.data_access(mclk);
             self.regs.value[r::MARR] = self.regs.value[r::MARR].wrapping_add(self.regs.increment());
             self.pending_read = Some(self.regs.value[r::MARR]);
             self.schedule_commit(mclk);
@@ -405,7 +437,7 @@ impl Vdc {
         value
     }
 
-    pub fn write(&mut self, offset: u32, value: u8, mclk: i64) {
+    pub fn write(&mut self, offset: u32, value: u8, mut mclk: i64) {
         self.catch_up(mclk);
         let port = offset & 3;
         if port == 0 {
@@ -425,7 +457,11 @@ impl Vdc {
             if !msb {
                 self.regs.write_latch = value;
             } else {
-                self.data_access(mclk);
+                if self.serve && self.bsy() {
+                    self.serve_wanted = true; // `data_access` would wait: the board serves it first
+                    return;
+                }
+                mclk = self.data_access(mclk);
                 let word = self.regs.write_latch as u16 | ((value as u16) << 8);
                 self.pending_write = Some((self.regs.value[r::MAWR], word));
                 self.regs.value[r::MAWR] =
@@ -435,9 +471,15 @@ impl Vdc {
             return;
         }
         self.regs.set_byte(register, value, msb);
+        if register == r::MARR && msb && self.serve && self.bsy() {
+            // `data_access` below would wait: the board serves it first (the access is made
+            // again after the wait and stores the same byte again)
+            self.serve_wanted = true;
+            return;
+        }
         if register == r::MARR && msb {
             // [hw: pcetech 5.1 $01] writing the MSB loads the read buffer from VRAM[MARR]
-            self.data_access(mclk);
+            mclk = self.data_access(mclk);
             self.pending_read = Some(self.regs.value[r::MARR]);
             self.schedule_commit(mclk);
         } else if register == r::BYR {
@@ -452,8 +494,27 @@ impl Vdc {
 
     // -- VRAM access timing -----------------------------------------------------------------------
 
-    /// A second data-port access while one is pending holds the CPU until it commits.
-    fn data_access(&mut self, mclk: i64) {
+    /// A second data-port access while one is pending holds the CPU until it commits; the
+    /// time at which the new access is accepted is returned.
+    ///
+    /// The hold is the /BUSY pin on the CPU's RDY [wiki: VDC pinout]: only the CPU stops. The
+    /// VDC's syncs come from the VCE, so the display keeps its lines while the CPU waits, and a
+    /// VRAM -> VRAM transfer the CPU waits on meets the display start like any other: paused
+    /// (C7, the default) or cancelled (`dma_resumes=false`, which serves the access there).
+    /// Issue 0004: the wait used to run this chip alone to the transfer's end, lines ahead of
+    /// the board's line clock, so the display never started during it.
+    fn data_access(&mut self, mclk: i64) -> i64 {
+        if !self.bsy() {
+            return mclk;
+        }
+        // With the board's wait wired the access stopped before this point (`serve_wanted`) and
+        // is made again once the board has served it, so nothing is pending here.
+        debug_assert!(!self.serve, "the board serves a wired VDC's wait");
+        self.wait_alone(mclk)
+    }
+
+    /// `data_access` for a VDC with no board: no line clock reaches it during the wait.
+    fn wait_alone(&mut self, mclk: i64) -> i64 {
         let mut now = mclk;
         while self.bsy() && self.dma.busy() {
             // the pending access is stuck behind a transfer
@@ -472,9 +533,11 @@ impl Vdc {
             let wait = self.commit_at - now;
             if wait > 0 {
                 self.hold(wait);
+                now = self.commit_at;
             }
             self.commit_pending();
         }
+        now
     }
 
     fn schedule_commit(&mut self, mclk: i64) {

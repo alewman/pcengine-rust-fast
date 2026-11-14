@@ -306,7 +306,8 @@ def cpu_text(s) -> str:
         f"{s.irq_disable},{int(s.halted)}{int(s.reset_pending)}"
         f"{int(s.maskable_interrupt_pending)}{int(s.non_maskable_interrupt_pending)},"
         f"{option(s.polled_i)},{option(s.polled_maskable_interrupt)},"
-        f"{option(s.polled_non_maskable_interrupt)},{int(s.skipped_poll)}"
+        f"{option(s.polled_non_maskable_interrupt)},{int(s.skipped_poll)},"
+        f"{'-' if s.polled_irq_lines is None else s.polled_irq_lines}"
     )
 
 
