@@ -44,3 +44,5 @@ below about 3% cannot be told from nothing here.
   their schedule, and the board cannot tell cheaply that it did not.
 - **The CPU core.** After these changes huc6280-rust and the 65xx frame under it are the largest
   share of a frame (README, "Where the time goes"). The brief says to report it, not to edit it.
+  Done since in its own speed fork, huc6280-rust-fast, which this board now uses (x1.075 on the
+  five titles, 2026-11-13; README, "Speed").

@@ -1,5 +1,8 @@
 # Handoff brief: pcengine-rust
 
+> In pcengine-rust-fast: this is the base board's brief, inherited with the fork. The fork's
+> own brief is [fast-brief.md](fast-brief.md).
+>
 > **This is the brief the board was built from (2026-11-12), kept as written**, with "What was
 > built" appended at the end by the session that built it. Its instructions ("do not push", the
 > working rules, the local paths under `/data/emu/` and `~/.local/opt/`, which are the author's

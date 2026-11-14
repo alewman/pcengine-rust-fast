@@ -1,5 +1,12 @@
 # Brief: pcengine-rust-fast
 
+> **This is the brief the fork was built from (2026-11-12), kept as written**, with "What was
+> built" appended at the end by the session that built it. Its instructions ("do not push", the
+> working rules, the local paths under `/data/emu/`, which are the author's machine) are history,
+> not instructions to a reader. The [README](../README.md) is the current account; where the two
+> differ, the README is right (for example, the CPU is now huc6280-rust-fast, and the PSG's level
+> curve is a written-out table, which resolves the wasm caveat the build left).
+
 ## The request
 
 Aubrey, 2026-11-12: "get our rust version and rust fast and the play-pce site ready", and play-pce
@@ -79,3 +86,6 @@ shortcuts); the gate green on every commit's tree. The README has the tables, th
 before and after, what a host must know (`touch`, the lent ROM image, LTO) and the PSG
 level-table finding under wasm. The CPU core is now the largest share of a frame (about 32%)
 and was not edited. Not pushed; no GitHub repository.
+
+(2026-11-13, at publication) pcengine-rust's publication cleanup was merged, and the CPU core
+was swapped for its speed fork, huc6280-rust-fast: x1.075 on the five titles, the gate green.

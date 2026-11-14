@@ -78,3 +78,35 @@ the tolerance), and `System::new` without its forced first delivery of the
 interrupt lines (all three are low at power-on, which is what the CPU
 already holds). `pad6-counts-clr-level` is caught by a unit test only: on
 every pad scan the cases make, the faulty pad's count has the right parity.
+
+## This fork's twenty
+
+pcengine-rust-fast keeps the 48 above, each still caught by the same check, and adds at least
+one fault on every kept change that has code: **68 caught, 0 missed** (2026-11-12, and re-run
+on 2026-11-13 with the CPU core swapped for huc6280-rust-fast: the same). The unit tests of `tests/fork.rs` catch those that change the state but no
+bus cycle, picture or sample. The first run missed one, `next-event-forgets-the-commit`: at 12
+master clocks a cycle a VRAM write's slot always falls inside the access's own stretch, so the
+test program now runs at high CPU speed. The faults are built without LTO (the same source).
+
+| Fault | Module | What it changes | Caught by |
+| --- | --- | --- | --- |
+| `horizon-waits-for-the-underflow` | `board.rs` | the event horizon stops for the timer's underflow only, so the count is behind the clock between | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `horizon-sleeps-through-a-dma` | `board.rs` | the event horizon does not stop for a running VRAM DMA: its words move late | `cargo test` (`a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon`) |
+| `access-keeps-the-old-horizon` | `board.rs` | what an access schedules (a VRAM commit, the timer's start) is not in the event horizon | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `next-event-forgets-the-commit` | `vdc/chip.rs` | a VDC's next event leaves out a waiting VRAM access's slot | `cargo test` (`every_device_is_caught_up_after_every_instruction`) |
+| `any-card-is-plain` | `board.rs` | a card that is not this crate's own (it may hold the CPU, raise IRQ2) has its accesses cut short too | rung 5 (`sock-card-bonk`) |
+| `quiet-access-with-a-hold-waiting` | `board.rs` | a work RAM or card access is cut short with a hold from outside waiting | `cargo test` (`a_hold_from_a_port_devices_catch_up_stretches_that_ram_access`) |
+| `palette-write-waits-for-the-row-end` | `video.rs` | the capture's quick row is taken with palette writes inside the row: they show from the next row | rung 2 (`covell`) |
+| `tile-line-mirrored` | `vdc/background.rs` | the bitplane table puts a tile line's pixels in the other order | rung 2 (`covell`) |
+| `background-fine-scroll-dropped` | `vdc/background.rs` | the first tile of a background row is drawn from its left edge whatever BXR's low bits | rung 2 (`base-probe`) |
+| `any-path-is-direct` | `board.rs` | the capture reads the first VDC's row whatever pixel path is plugged in | rung 5 (`sock-path-rtype`) |
+| `row-buffer-not-cleared` | `vdc/chip.rs` | a line's row starts as the last line's pixels, not as overscan | rung 2 (`covell`) |
+| `sprite-list-not-emptied` | `vdc/sprites.rs` | a line's sprite scan adds to the last line's entries | rung 2 (`base-probe`) |
+| `line-events-not-emptied` | `vdc/sequencer.rs` | a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites | rung 4 (`lib-Great Fumo Binning, The (World) (Aftermarket) (Unl)`) |
+| `port-catch-up-keeps-the-old-horizon` | `board.rs` | what a port device's `catch_up` does to a VDC is not in the event horizon | `cargo test` (`a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon`) |
+| `quiet-idle-cycle-not-tapped` | `board.rs` | an idle cycle before the event horizon is left out of the bus log | rung 2 (`covell`) |
+| `full-read-skips-the-events` | `board.rs` | a read cycle that reaches the event horizon does not run the events | rung 2 (`base-probe`) |
+| `rom-lent-beside-a-port-device` | `board.rs` | a RomCard's image is taken by the board although a port device could look at the card | `cargo test` (`a_rom_card_has_its_image_whenever_a_port_device_looks`) |
+| `rom-not-given-back` | `board.rs` | a RomCard's image stays with the board when the host reaches the card | `cargo test` (`a_rom_card_has_its_image_whenever_the_host_looks`) |
+| `lent-rom-bank-offsets` | `cards.rs` | the board reads a lent image's banks from the wrong place | rung 2 (`covell`) |
+| `hold-from-catch-up-waits` | `board.rs` | a hold a port device leaves from `catch_up` is not applied by a work RAM or plain card access | `cargo test` (`a_hold_from_a_port_devices_catch_up_stretches_that_ram_access`) |

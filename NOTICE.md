@@ -1,6 +1,7 @@
 # Third-party notices
 
-pcengine-rust is MIT licensed ([LICENSE](LICENSE)). It contains no code from the GPL and LGPL
+pcengine-rust-fast, like pcengine-rust, the board it is a speed fork of, is MIT licensed
+([LICENSE](LICENSE)). It contains no code from the GPL and LGPL
 emulators its comments cite (Mednafen, Beetle PCE, Mesen2, Geargrafx, the MiSTer core, parts of
 MAME): the only sources transcribed are pcengine-python and huc6280-python, our own MIT
 repositories, which name those emulators as referees and readings, not as sources of code

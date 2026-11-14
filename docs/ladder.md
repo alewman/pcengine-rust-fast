@@ -1,5 +1,9 @@
 # The ladder in detail
 
+> In pcengine-rust-fast: this is pcengine-rust's account, inherited with the fork. The fork runs
+> the same cases from the same reference cache (`scripts/ladder.sh`), and the
+> [README](../README.md) has its results.
+
 The README's "How it is proven" has the summary; this is the fuller account of
 the gate and of rungs 3 to 6, as recorded by the session that built and
 certified the board (2026-11-12). The whole gate was re-run from the
