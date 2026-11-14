@@ -5,8 +5,8 @@ name: CI
 # hand (README). CI runs the build, the tests that need no ROM (the sockets,
 # the pads, the mappers on synthetic images, the save-state round trip and
 # refusals on a synthetic card) and rung 1 on Covell's CPU test, fetched by
-# the pin pcengine-python uses. huc6280-rust comes in by the git revision in
-# Cargo.toml.
+# the pin pcengine-python uses. The CPU core, huc6280-rust-fast, comes in by
+# the git revision in Cargo.toml.
 on:
   push:
     branches: [main]

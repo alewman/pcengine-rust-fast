@@ -5,7 +5,7 @@
 #
 #   scripts/wasm-bench.sh                 # this tree
 #   scripts/wasm-bench.sh --base DIR      # the same bench on another checkout of the board
-#                                         # (the fork point: /data/emu/pcengine-rust)
+#                                         # (the fork point: a checkout of pcengine-rust)
 #   FRAMES=600 ROUNDS=5 CPU=31
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

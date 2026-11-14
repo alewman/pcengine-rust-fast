@@ -499,8 +499,11 @@ def main() -> int:
             if (tree / part).exists():
                 shutil.rmtree(tree / part)
             shutil.copytree(ROOT / part, tree / part)
-        manifest = (ROOT / "Cargo.toml").read_text().replace(
-            'path = "../huc6280-rust"', f'path = "{(ROOT.parent / "huc6280-rust").as_posix()}"'
+        # a sibling dependency by relative path (while working) resolves from this checkout
+        manifest = re.sub(
+            r'path = "(\.\./[^"]+)"',
+            lambda m: f'path = "{(ROOT / m.group(1)).resolve().as_posix()}"',
+            (ROOT / "Cargo.toml").read_text(),
         )
         # the same source built without the whole-program pass: a fault costs a third of the build
         manifest = manifest.replace('lto = "fat"\ncodegen-units = 1\n', "")

@@ -92,7 +92,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "huc6280-rust"
+name = "huc6280-rust-fast"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -141,7 +141,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "flate2",
- "huc6280-rust",
+ "huc6280-rust-fast",
  "serde",
  "sha1",
 ]
