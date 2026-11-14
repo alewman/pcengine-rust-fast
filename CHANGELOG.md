@@ -8,7 +8,7 @@ Merges pcengine-rust 0.2.0 (`39b29d1` and its follow-ups: pcengine-python v0.2.0
 moves the CPU core to huc6280-rust-fast `90711f2` (huc6280-rust 0.2.0 merged: huc6280-python
 v0.4.0, `265df88`).
 
-- **The core**: huc6280-rust-fast by path (`../huc6280-rust-fast`) until `90711f2` is on GitHub.
+- **The core**: huc6280-rust-fast `90711f2`, by its GitHub revision.
   `CpuState::polled_irq_lines`; the core records the interrupt lines at every access.
 - **From the base board** (its CHANGELOG has the details): the board's own events run while the
   CPU waits on a VDC access (`Board::step`, `settle`, `serve_vram`, `sockets::VdcAccess`,

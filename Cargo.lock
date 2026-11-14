@@ -94,6 +94,7 @@ dependencies = [
 [[package]]
 name = "huc6280-rust-fast"
 version = "0.2.0"
+source = "git+https://github.com/alewman/huc6280-rust-fast?rev=90711f2ab3511456b0fb01b32d3e96253bbba68d#90711f2ab3511456b0fb01b32d3e96253bbba68d"
 dependencies = [
  "serde",
  "serde_json",

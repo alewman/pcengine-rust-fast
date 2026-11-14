@@ -16,10 +16,8 @@ name = "pcengine_rust"
 # huc6280-rust-fast (crate huc6280): the speed fork of huc6280-rust, held in
 # lockstep with it, so with huc6280-python v0.4.0 (265df88), the revision
 # pcengine-python v0.2.0 pins. The parent board, pcengine-rust, uses
-# huc6280-rust itself; the API is the same. By path until huc6280-rust-fast
-# 90711f2 is on GitHub; then:
-# huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "90711f2ab3511456b0fb01b32d3e96253bbba68d" }
-huc6280 = { package = "huc6280-rust-fast", path = "../huc6280-rust-fast" }
+# huc6280-rust itself; the API is the same.
+huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "90711f2ab3511456b0fb01b32d3e96253bbba68d" }
 # Save states (src/state.rs) and the card's identity in them.
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"
