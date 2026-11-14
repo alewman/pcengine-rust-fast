@@ -1,5 +1,12 @@
 # Handoff brief: pcengine-rust
 
+> **This is the brief the board was built from (2026-11-12), kept as written**, with "What was
+> built" appended at the end by the session that built it. Its instructions ("do not push", the
+> working rules, the local paths under `/data/emu/` and `~/.local/opt/`, which are the author's
+> machine) are history, not instructions to a reader. The [README](../README.md) is the current
+> account; where the two differ, the README is right (for example, the PSG's level curve is now a
+> written-out table, `LEVEL_BITS`, which resolves the wasm caveat the build left).
+
 ## The request
 
 Aubrey, 2026-11-12, after the PC Engine family's Python release: "get our rust version and rust

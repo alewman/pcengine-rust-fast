@@ -104,9 +104,7 @@ impl PageTable {
                 "page range {first_page:#x}-{last_page:#x} outside 0-{PAGE_COUNT:#x}"
             ));
         }
-        for page in first_page..=last_page {
-            self.current[page] = handler;
-        }
+        self.current[first_page..=last_page].fill(handler);
         Ok(())
     }
 

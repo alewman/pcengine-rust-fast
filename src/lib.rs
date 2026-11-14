@@ -54,3 +54,8 @@ pub mod vdc;
 pub mod video;
 
 pub use huc6280;
+
+/// The README's example compiles and runs as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

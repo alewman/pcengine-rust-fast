@@ -31,11 +31,13 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+# The defaults are the author's layout: set LIB, COVELL and SF2 (which defaults to the card's
+# No-Intro name in the default LIB, not in a LIB you set) to your own files.
+_LIB = "/data/emu/roms-retrobat/pcengine"
 DEFAULTS = {
-    "LIB": "/data/emu/roms-retrobat/pcengine",
+    "LIB": _LIB,
     "COVELL": "/data/emu/pcengine-python/tests/test_roms/CPU_Test/CPU_Test_10.pce",
-    "SF2": "/data/emu/source/myrient.erista.me/files/No-Intro/NEC - PC Engine - TurboGrafx-16/"
-    "Street Fighter II' - Champion Edition (Japan).zip",
+    "SF2": f"{_LIB}/Street Fighter II' - Champion Edition (Japan).zip",
     "PROBE": str(HERE.parent / "scratch" / "probe.pce"),
 }
 

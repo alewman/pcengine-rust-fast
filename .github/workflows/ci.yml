@@ -5,10 +5,8 @@ name: CI
 # hand (README). CI runs the build, the tests that need no ROM (the sockets,
 # the pads, the mappers on synthetic images, the save-state round trip and
 # refusals on a synthetic card) and rung 1 on Covell's CPU test, fetched by
-# the pin pcengine-python uses.
-#
-# Cargo.toml depends on huc6280-rust by path while that crate is local only;
-# this workflow builds once it is repinned to a GitHub revision.
+# the pin pcengine-python uses. huc6280-rust comes in by the git revision in
+# Cargo.toml.
 on:
   push:
     branches: [main]

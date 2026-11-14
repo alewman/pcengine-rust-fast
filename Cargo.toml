@@ -5,6 +5,8 @@ edition = "2021"
 rust-version = "1.85"
 description = "A speed fork of pcengine-rust, the Rust PC Engine / TurboGrafx-16 board, held in lockstep with it"
 license = "MIT"
+repository = "https://github.com/alewman/pcengine-rust-fast"
+readme = "README.md"
 publish = false
 
 [lib]
@@ -12,9 +14,8 @@ name = "pcengine_rust"
 
 [dependencies]
 # huc6280-rust (crate huc6280), transcribed from huc6280-python v0.3.0
-# (bf20330), the revision pcengine-python v0.1.0 pins. By path while it is
-# local only: repin to a GitHub revision once both are pushed.
-huc6280 = { package = "huc6280-rust", path = "../huc6280-rust" }
+# (bf20330), the revision pcengine-python v0.1.0 pins; huc6280-rust 65c18df.
+huc6280 = { package = "huc6280-rust", git = "https://github.com/alewman/huc6280-rust", rev = "65c18df686cbb5e0a187ad51631ba1b8a350ae49" }
 # Save states (src/state.rs) and the card's identity in them.
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"
