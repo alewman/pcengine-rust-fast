@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: MIT
+// Mapper facts cite MAME's src/devices/bus/pce/pce_slot.cpp and pce_rom.cpp (pce_sf2,
+// pce_populous, pce_tennokoe), BSD-3-Clause, copyright Fabio Priuli (notice in
+// NOTICE.md): read by the reference as a description of the cards, no code transcribed. The
+// Mednafen facts named below (the SF2 size threshold, the Populous title string, the $FF RAM
+// fill) are behaviour, checkable by running it as a closed box.
 //! HuCards: the standard ROM card, Street Fighter II', Populous and Tennokoe (`cards.py`).
 //!
 //! A card is on the CPU's physical bus: PA20 is its chip enable, so it answers banks $00-$7F (the
@@ -5,7 +11,7 @@
 //! smaller images:
 //!
 //! - 384 KiB: the first 256 KiB fills banks $00-$3F twice, the last 128 KiB fills $40-$7F four
-//!   times [emu: MAME `pce_slot.cpp` rom_map_setup `0 1 0 1 2 2 2 2`; Mednafen `huc.cpp`].
+//!   times [emu: MAME `pce_slot.cpp` rom_map_setup `0 1 0 1 2 2 2 2`; Mednafen observed the same].
 //! - 512 KiB: $00-$3F straight, $40-$7F the upper 256 KiB twice [emu: Mednafen; MAME generic].
 //! - other power-of-two sizes: mirrored to fill the window.
 //! - anything else (768 KiB, odd homebrew sizes): U18, provisional: banks repeat modulo the image.
@@ -141,7 +147,7 @@ impl Card for RomCard {
 
 // --- the mappers beyond plain ROM (M5) ----------------------------------------------------------
 
-/// [emu: Mednafen huc.cpp sf2_threshold] an image this big has the mapper
+/// [emu: Mednafen, observed: its size threshold for the mapper] an image this big has the mapper
 pub const SF2_THRESHOLD: usize = 2048 * 1024;
 pub const SF2_FIXED: usize = 512 * 1024;
 

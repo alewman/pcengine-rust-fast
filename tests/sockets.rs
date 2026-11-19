@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The sockets (the reference's docs/sockets.md), exercised with the test-only fakes: every
 //! trait has a fake and the base board works with each of them plugged in, and unchanged
 //! without. The reference's tests/test_sockets.py, test for test; what it checks of Python's
@@ -215,8 +216,8 @@ fn instances_not_modules_two_boards_two_vdcs_do_not_share_state() {
         (0, 0, 0)
     );
     assert_eq!(b.psg.balance, 0);
-    let mut v1 = Vdc::new(None, Some(-8), false, true);
-    let v2 = Vdc::new(None, Some(-8), false, true);
+    let mut v1 = Vdc::new(None, Some(-16), true);
+    let v2 = Vdc::new(None, Some(-16), true);
     v1.regs.value[5] = 1;
     assert_eq!(v2.regs.value[5], 0);
     assert_eq!(Vce::new(None).palette.len(), 512);

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// The sixteen values of the optional `scale_table_quirk` table are those of MAME's
+// src/devices/sound/c6280.cpp, BSD-3-Clause, copyright Charles MacDonald (notice in NOTICE.md).
 //! The HuC6280's programmable sound generator: six wavetable channels, noise, LFO, DDA
 //! (`psg/chip.py`).
 //!

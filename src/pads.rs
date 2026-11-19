@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The pads: 2-button, 6-button and the 5-player multitap (the mouse is not modelled: U12)
 //! (`pads.py`).
 //!

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Rung 4: the library. Every HuCard of $LIB and the mapper cards outside it, 300 frames from
 # power-on with a RUN press, in lockstep by frame digest. `--smoke` first: the curated 20 of
 # scripts/smoke.txt; the full library only when the smoke is clean.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The sockets: narrow traits an add-on crate implements to plug into this
 //! board (`sockets.py`; the reference's docs/sockets.md).
 //!

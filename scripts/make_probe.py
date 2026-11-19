@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Build scratch/probe.pce: a synthetic 8 KiB HuCard that reaches what the library's first
 seconds do not, so the lockstep gate has a case on which each named switch and each socket
 changes what the board does.

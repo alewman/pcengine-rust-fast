@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The lockstep gate's Rust side: run a card and write one line a frame (trace.rs), the same
 //! lines `scripts/pce_trace.py` writes for the reference.
 //!

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The HuC6270 VDC (`vdc/`): instances, no module state.
 //!
 //! It uses only `machine` constants from the rest of the board, so it can move to a core of its

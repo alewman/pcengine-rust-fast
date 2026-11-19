@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Test devices for the sockets (the reference's docs/sockets.md): every trait is exercised
 //! without any add-on.
 //!

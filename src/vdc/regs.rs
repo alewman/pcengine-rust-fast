@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The HuC6270's register file and the fields the timing generator reads (`vdc/regs.py`).
 //!
 //! [hw: pcetech 5.1; mfr: Hudson HuC6270 manual] Registers are 16 bits, written a byte at a time.

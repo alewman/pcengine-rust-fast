@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The HuC6280's on-die peripherals that are not the CPU: timer, $1400 interrupt
 //! controller, I/O port and the I/O buffer (`cpu_io/__init__.py`; Aubrey's rule: in the board,
 //! behind a module boundary).

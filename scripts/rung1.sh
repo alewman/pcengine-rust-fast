@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Rung 1: the skeleton. The board, huc6280-rust and a plain ROM card run Covell's CPU test
 # for 60 frames (the card is read in place, never committed).
 # Usage: scripts/rung1.sh [CPU_Test_10.pce]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CARD=${1:-${COVELL:-/data/emu/pcengine-python/tests/test_roms/CPU_Test/CPU_Test_10.pce}}
+CARD=${1:-${COVELL:-$ROOT/external/covell/CPU_Test_10.pce}}
 cargo build --release -q --manifest-path "$ROOT/Cargo.toml"
 OUT=$("$ROOT/target/release/pce-trace" "$CARD" --frames 60)
 LAST=$(printf '%s\n' "$OUT" | tail -n 1)

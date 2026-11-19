@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The lockstep gate's side of this board: per-frame digests of everything the gate compares,
 //! in the spelling `scripts/pce_trace.py` writes for the reference.
 //!
@@ -179,7 +180,6 @@ pub struct Setup {
     pub start_line: i64,
     pub start_offset: i64,
     pub vblank_dots: Option<i64>,
-    pub vertical_at_line_start: bool,
     pub dma_resumes: bool,
     pub psg: crate::psg::PsgSwitches,
     pub timer_window: i64,
@@ -195,7 +195,7 @@ pub struct Setup {
 
 impl Setup {
     /// `IMAGE [--machine pce|tg16] [--frames N] [--press SPEC]... [--seed N] [--start-line N]
-    /// [--start-offset N] [--vblank-dots N|none] [--vertical-at-line-start] [--no-dma-resume]
+    /// [--start-offset N] [--vblank-dots N|none] [--no-dma-resume]
     /// [--psg NAME=VALUE]... [--psg-variant NAME] [--timer-window N] [--no-bit2-lines]
     /// [--device NAME] [--detail FRAME] [--out FILE]`
     /// The reference's defaults around a card image.
@@ -208,11 +208,10 @@ impl Setup {
             seed: None,
             start_line: 0,
             start_offset: 0,
-            vblank_dots: Some(-8),
-            vertical_at_line_start: false,
+            vblank_dots: Some(-16),
             dma_resumes: true,
             psg: crate::psg::PsgSwitches::default(),
-            timer_window: 15,
+            timer_window: 3,
             lines_follow_vce_bit2: true,
             device: "pad2".to_string(),
             detail: None,
@@ -245,7 +244,6 @@ impl Setup {
                         Some(number(text)?)
                     };
                 }
-                "--vertical-at-line-start" => setup.vertical_at_line_start = true,
                 "--no-dma-resume" => setup.dma_resumes = false,
                 "--psg-variant" => {
                     let name = value()?;
@@ -333,7 +331,6 @@ impl Setup {
             start_line: self.start_line,
             start_offset: self.start_offset,
             vblank_dots: self.vblank_dots,
-            vertical_at_line_start: self.vertical_at_line_start,
             dma_resumes: self.dma_resumes,
             psg: self.psg,
             timer_underflow_window_mclk: self.timer_window,

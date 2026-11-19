@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Sprites: the line scan of the sprite attribute table, and the drawing of the line's sprites
 //! (`vdc/sprites.py`).
 //!
@@ -16,16 +17,14 @@
 //! sprite's opaque pixel sets the collision flag. When MWR's sprite access width is 1 the pattern
 //! is two bitplanes, picked by the CG bit (SP0/SP1 or SP2/SP3).
 //!
-//! Provisional (U3, tier 5): that the scan reads the pattern words when it finds the sprite (the
-//! line before it is drawn), as Mednafen does; the narrow-display budget below is Mesen2's.
+//! The scan runs, and reads the pattern words, at the line step before the line is drawn (the
+//! blanking in which the manual says the patterns are fetched); how many entries are searched and
+//! fetched follows the manual's table (2.4.1 (6), in vdc/chip.rs `fetch_sprites`). Provisional (U3).
 
 use serde::{Deserialize, Serialize};
 
 pub const HEIGHTS: [i64; 4] = [16, 32, 64, 64];
 pub const HEIGHT_MASKS: [u32; 4] = [!0, !2, !6, !6];
-/// [mfr: SM table; emu: Mesen2] dots of fetch time per entry
-pub const CLOCKS_PER_SPRITE: [i64; 4] = [4, 4, 8, 16];
-
 pub const SPRITE_LIMIT: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,8 +39,11 @@ pub struct Entry {
     pub planes: [u16; 4],
 }
 
-/// The entries of sprites covering `line` (counted from the first display line), and whether
-/// a 17th entry was needed (overflow).
+/// The entries of sprites covering `line` (counted from the first display line) among the
+/// first `searched` table entries, and whether a 17th entry was needed (overflow).
+///
+/// Rust: the reference's keyword arguments `limit` (default `SPRITE_LIMIT`) and `searched`
+/// (default 64) are plain arguments.
 pub fn scan(
     vram: &[u16],
     size: usize,
@@ -49,13 +51,15 @@ pub fn scan(
     line: i64,
     mwr: u16,
     limit: usize,
+    searched: usize,
 ) -> (Vec<Entry>, bool) {
     let mut entries: Vec<Entry> = Vec::new();
-    let overflow = scan_into(&mut entries, vram, size, sat, line, mwr, limit);
+    let overflow = scan_into(&mut entries, vram, size, sat, line, mwr, limit, searched);
     (entries, overflow)
 }
 
 /// `scan` into a list the caller keeps (emptied first); returns the overflow.
+#[allow(clippy::too_many_arguments)] // `scan`'s seven and the list
 pub fn scan_into(
     entries: &mut Vec<Entry>,
     vram: &[u16],
@@ -64,10 +68,11 @@ pub fn scan_into(
     line: i64,
     mwr: u16,
     limit: usize,
+    searched: usize,
 ) -> bool {
     entries.clear();
     let cg_two_planes = ((mwr >> 2) & 3) == 1;
-    for i in 0..64 {
+    for i in 0..searched.min(64) {
         let (w0, w1, w2, w3) = (sat[4 * i], sat[4 * i + 1], sat[4 * i + 2], sat[4 * i + 3]);
         let y = (w0 & 0x3FF) as i64 - 64;
         let shape = ((w3 >> 12) & 3) as usize;
@@ -97,7 +102,7 @@ pub fn scan_into(
             let cell = pattern | if wide { half ^ hflip as u32 } else { 0 };
             let address = (cell * 64 + (row & 15)) as usize;
             let planes = if address + 48 >= size {
-                // [emu: Mesen2] an empty sprite past the VRAM; U23
+                // U23/U27, a choice: an empty sprite past the VRAM
                 [0, 0, 0, 0]
             } else if cg_two_planes {
                 let shift = if w2 & 1 != 0 { 32 } else { 0 };

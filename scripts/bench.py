@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Frames per second of the reference on a card, nothing logged or digested (run on the
 reference's interpreter). The counterpart of ``pce-bench``.
 

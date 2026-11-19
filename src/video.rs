@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The frame/line clock and the picture capture (`video.py`).
 //!
 //! `Timeline` is the VCE's sync generator: it owns the line and frame counters on the board's one
@@ -59,7 +60,7 @@ impl Timeline {
     }
 
     fn lines_for_frame(&self, vce: &Vce) -> i64 {
-        // C3: sampled where the frame starts, as Mednafen samples it where the vsync ends.
+        // C3: sampled where the frame starts (a choice; the emulators differ on the point).
         if self.lines_follow_vce_bit2 && !vce.bit2() {
             return FRAME_LINES_SHORT;
         }
@@ -127,10 +128,11 @@ impl Capture {
 
     /// Called once the row of a line has ended, with the row the pixel path made of the VDCs'.
     ///
-    /// [emu: Mednafen vce.cpp] A row is the 1365 master clocks from the end of the line's
-    /// horizontal sync to the end of the next line's: dot 0 is the first dot after the sync, so
-    /// a 256-wide picture (HDS 2) starts at dot 32 and fits in the row. This is the same
-    /// raster as `timing.start_mclk`, shifted by `HSYNC_CLOCKS`.
+    /// A row is the 1365 master clocks from the end of the line's horizontal sync to the end of
+    /// the next line's (a choice; MAME huc6260.cpp also begins its lines there): dot 0 is the
+    /// first dot after the sync, so a 256-wide picture (HDS 2) starts at dot (2 + 1) * 8 = 24
+    /// and fits in the row. This is the same raster as `timing.start_mclk`, shifted by
+    /// `HSYNC_CLOCKS`.
     pub fn finish_line(&mut self, timing: &VideoTiming, row: &[u16], vce: &mut Vce) {
         let first = timing.start_mclk + HSYNC_CLOCKS;
         let end = first + LINE_CLOCKS;

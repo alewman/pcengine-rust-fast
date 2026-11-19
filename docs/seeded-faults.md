@@ -1,33 +1,44 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Seeded faults (rung 7)
 
-A gate that cannot fail proves nothing. This is the record of the run on 2026-11-13 (0.2.0, against
-pcengine-python `v0.2.0`'s rebuilt reference cache, `scripts/rung7.sh` at `39b29d1`): pcengine-rust
-0.1.0's 48 faults (one changed text: `state-forgets-the-pad-latch` is now caught by `cargo test`, where
-it was rung 6) and eight new ones on what 0.2.0 carries: the board's VDC wait (`vdc-waits-alone`,
-`served-access-made-at-the-old-time`, `wait-not-held`, `wait-not-settled`, `decode-again-repeats-accesses`,
-`accesses-after-a-stop-made`), the PSG's level table (`level-table-built-once`) and the CPU state's new
-field in a save state (`state-drops-the-polled-lines`).
+A gate that cannot fail proves nothing. This is the record of the run on 2026-11-19 (the clean
+rewrite, against pcengine-python `3318027`'s rebuilt reference cache): the 49 faults of 0.2.0 that
+did not hold withdrawn code (seven did, and were cut unread with it: docs/restart.md) and seventeen
+new ones on the new code: the line machine (`display-start-a-character-late`,
+`scroll-latched-a-character-early`, `vds-a-line-short`, `front-porch-vcr-plus-two`,
+`raster-counter-one-at-the-display`, `burst-from-the-background-bit`,
+`cut-display-loses-its-vblank`), the scroll counter (`byr-reloads-on-the-msb-only`,
+`scroll-counter-not-stepped`), the DMAs (`sat-transfer-two-lines`, `dma-cancelled-by-the-display`,
+`vram-dma-one-dot-a-word`), the sprite budget and MWR (`sprite-fetch-budget-ignored`,
+`sprite-search-budget-ignored`, `mwr-fields-live`), the write port's stop for the board's wait
+(`vwr-write-not-stopped-for-the-wait`) and the re-cited sync width (`hsync-a-clock-short`).
 
 `scripts/seeded_faults.py` plants one single-line fault at a time in a copy
 of `src/`, builds it, and runs the checks cheapest first until one fails:
 rung 2 (Covell's test and the probe card), rung 5 (the socket, machine and
 switch cases), the smoke list of rung 4, `cargo test`, rung 3, the whole
-library, rung 6.
+library, rung 6. Since 2026-11-19 it first checks that the unfaulted board
+passes rung 2 (a case that cannot run, such as a missing image, fails like a
+difference and "catches" every fault), and it copies the README into its tree
+(`src/lib.rs` runs the README's example as a doctest; without it `cargo test`
+failed whatever the fault, so every fault that reached the tests counted as
+caught: the five "a test the script could not name" of the 0.2.0 record
+below were that).
 
 | Fault | Module | What it changes | Caught by |
 | --- | --- | --- | --- |
 | `vce-access-not-stretched` | `board.rs` | only a VDC access takes the extra cycle, not a VCE one (C4, ares' reading) | rung 2 (`covell`) |
-| `row-ends-a-dot-late` | `board.rs` | a line's picture row is handed to the capture 4 master clocks late | `cargo test` (`a_replacement_pixel_path_sees_every_line`) |
+| `row-ends-a-dot-late` | `board.rs` | a line's picture row is handed to the capture 4 master clocks late | rung 2 (`covell`) |
 | `irq1-from-the-first-vdc-only` | `board.rs` | a second VDC's interrupt is not ORed into IRQ1 (the reference's issue 0001) | `cargo test` (`a_second_vdc_is_run_synced_read_for_pixels_and_ored_into_irq1`) |
 | `port-device-not-caught-up` | `board.rs` | the board never runs the port device up to its clock (the reference's issue 0002) | rung 5 (`sock-port-lazers`) |
 | `disable-mask-not-delivered` | `board.rs` | a write to $1402 never reaches the CPU | rung 5 (`sock-multitap-bomberman94`) |
 | `lines-delivered-only-on-advance` | `board.rs` | an interrupt line an access changed is seen by the CPU a cycle later | rung 2 (`base-probe`) |
 | `vdc-waits-alone` | `board.rs` | a waiting VDC runs alone to the transfer's end, lines ahead of the line clock (v0.1.0) | rung 2 (`base-probe`) |
-| `served-access-made-at-the-old-time` | `board.rs` | the access a VDC waited for is made at the time the wait began, not where it ended | `cargo test` (a test the script could not name) |
+| `served-access-made-at-the-old-time` | `board.rs` | the access a VDC waited for is made at the time the wait began, not where it ended | **MISSED** |
 | `wait-not-held` | `board.rs` | the CPU is not held while the board serves a VDC's access | rung 2 (`base-probe`) |
-| `wait-not-settled` | `board.rs` | after the wait the devices are not caught up to the time it ended | `cargo test` (a test the script could not name) |
+| `wait-not-settled` | `board.rs` | after the wait the devices are not caught up to the time it ended | **MISSED** |
 | `decode-again-repeats-accesses` | `sockets.rs` | a decode made again after a wait repeats the VDC accesses made before the stop | `cargo test` (`a_decode_made_again_after_a_wait_does_not_repeat_the_accesses_made_before_it`) |
-| `accesses-after-a-stop-made` | `sockets.rs` | the VDC accesses after a stop are made before the wait, not after it | `cargo test` (a test the script could not name) |
+| `accesses-after-a-stop-made` | `sockets.rs` | the VDC accesses after a stop are made before the wait, not after it | **MISSED** |
 | `level-table-built-once` | `psg/chip.rs` | `silent_units` set after construction leaves the host-rate level table (v0.1.0) | `cargo test` (`silent_units_set_on_an_instance_reaches_the_host_rate_output`) |
 | `timer-prescaler-not-reset` | `cpu_io/timer.rs` | the first tick after an enable comes a CPU cycle early (U24) | rung 2 (`base-probe`) |
 | `timer-window-a-clock-long` | `cpu_io/timer.rs` | the count reads $7F one master clock longer after an underflow (C25) | rung 2 (`base-probe`) |
@@ -44,16 +55,26 @@ library, rung 6.
 | `line-count-ignores-the-machine-row` | `video.rs` | `lines_follow_vce_bit2 = false` still follows VCE bit 2 (C3) | rung 5 (`sw-no-bit2-lines-probe`) |
 | `cpu-slot-every-fourth-dot` | `vdc/chip.rs` | the CPU's VRAM slots repeat every 4 dots, not 8 (U1) | rung 5 (`sock-path-rtype`) |
 | `raster-compare-a-line-early` | `vdc/chip.rs` | the raster compare fires a line early | rung 2 (`base-probe`) |
-| `byr-set-on-the-msb-only` | `vdc/chip.rs` | a write of BYR's low byte alone does not move the line counter (Mednafen's note) | rung 2 (`base-probe`) |
-| `byr-latched-a-dot-late` | `vdc/sequencer.rs` | BYR is latched a dot later in the line (U3) | rung 2 (`base-probe`) |
-| `vds-a-line-short` | `vdc/sequencer.rs` | the display period starts a line early | rung 2 (`covell`) |
-| `burst-from-the-background-bit` | `vdc/sequencer.rs` | burst mode is decided from the background enable alone | rung 5 (`mach-tg16-gradius`) |
-| `sat-transfer-time-fixed` | `vdc/dma.rs` | the SAT transfer takes 1024 dots of the 5 MHz clock whatever the dot clock | rung 2 (`base-probe`) |
-| `dma-cancelled-by-the-display` | `vdc/dma.rs` | a VRAM DMA running when the display starts is cancelled whatever `dma_resumes` says (C7) | rung 2 (`base-probe`) |
-| `seventeen-sprites` | `vdc/sprites.rs` | a line holds 17 sprite entries before the overflow | rung 2 (`base-probe`) |
+| `seventeen-sprites` | `vdc/sprites.rs` | a line holds 17 sprite entries before the overflow | rung 4 (`lib-Super Star Soldier (USA)`) |
 | `sprites-always-in-front` | `vdc/sprites.rs` | a sprite pixel hides the background whatever its priority bit | rung 2 (`base-probe`) |
 | `bat-height-from-the-width-bit` | `vdc/background.rs` | the BAT's height follows MWR D5 | rung 2 (`base-probe`) |
 | `vdw-eight-bits` | `vdc/regs.rs` | the display height register is 8 bits wide | rung 2 (`base-probe`) |
+| `display-start-a-character-late` | `vdc/sequencer.rs` | the display starts HDS + 2 characters after the line step, not HDS + 1 | rung 2 (`covell`) |
+| `scroll-latched-a-character-early` | `vdc/sequencer.rs` | the scroll is taken 24 dots before the display start, not 16 (the closed-box fit) | rung 2 (`base-probe`) |
+| `byr-reloads-on-the-msb-only` | `vdc/chip.rs` | a write of BYR's low byte alone does not reload the vertical scroll counter | rung 2 (`base-probe`) |
+| `scroll-counter-not-stepped` | `vdc/chip.rs` | the vertical scroll counter does not count the line steps | rung 2 (`covell`) |
+| `vds-a-line-short` | `vdc/sequencer.rs` | the display period starts a line early | rung 2 (`covell`) |
+| `front-porch-vcr-plus-two` | `vdc/sequencer.rs` | the front porch is VCR + 2 lines, not pcetech's VCR + 3 | rung 5 (`sw-psg-mame-aero`) |
+| `raster-counter-one-at-the-display` | `vdc/sequencer.rs` | the raster counter is $41, not $40, on the line before the display period | rung 2 (`base-probe`) |
+| `burst-from-the-background-bit` | `vdc/sequencer.rs` | burst mode is decided from the background enable alone | rung 5 (`mach-tg16-gradius`) |
+| `cut-display-loses-its-vblank` | `vdc/sequencer.rs` | a display period the vertical sync cuts short has no vertical blanking (C27) | rung 2 (`base-probe`) |
+| `sat-transfer-two-lines` | `vdc/dma.rs` | the SAT transfer is busy two lines, not pcetech's three | rung 2 (`base-probe`) |
+| `dma-cancelled-by-the-display` | `vdc/dma.rs` | a VRAM DMA running at the display start is cancelled whatever `dma_resumes` says (C7) | rung 2 (`base-probe`) |
+| `vram-dma-one-dot-a-word` | `vdc/dma.rs` | a VRAM DMA access takes one dot whatever MWR's access width | rung 4 (`lib-Dungeons & Dragons - Order of the Griffon (USA)`) |
+| `sprite-fetch-budget-ignored` | `vdc/chip.rs` | the manual's pattern-fetch budget (2.4.1 (6)) is not applied | rung 4 (`lib-Yo' Bro (USA)`) |
+| `sprite-search-budget-ignored` | `vdc/chip.rs` | the manual's SAT search budget (2.4.1 (6)) is not applied | rung 4 (smoke) (`lib-Galaga '90 (USA)`) |
+| `mwr-fields-live` | `vdc/chip.rs` | the sprite scan reads MWR's SM live, not as the last vertical blanking took it | `cargo test` (`the_sprite_access_width_waits_for_the_vertical_blanking`) |
+| `vwr-write-not-stopped-for-the-wait` | `vdc/chip.rs` | a VWR write while one is pending does not stop for the board's wait (issue 0004) | rung 4 (`lib-Puzznic (Japan) (En)`) |
 | `noise-frequency-not-complemented` | `psg/chip.rs` | the noise period is taken from NF, not its complement | rung 2 (`base-probe`) |
 | `noise-feedback-bit` | `psg/chip.rs` | the noise shift register is 17 bits long | rung 2 (`base-probe`) |
 | `lfo-shift` | `psg/chip.rs` | the LFO's modulation is shifted by 0, 1, 2 where a period is first loaded | rung 2 (`base-probe`) |
@@ -62,16 +83,48 @@ library, rung 6.
 | `mixer-rounds-half-away` | `mixer.rs` | the mixer rounds a half away from zero (Rust's `round`), not to even (Python's) | rung 5 (`sock-port-lazers`) |
 | `mixer-hold-rounds` | `mixer.rs` | a source at another rate is held by a rounded count | rung 5 (`sock-port-lazers`) |
 | `mixer-gain-twice` | `mixer.rs` | a source that does not apply its own gain gets it doubled | rung 5 (`sock-port-lazers`) |
-| `hsync-a-clock-short` | `machine.rs` | the horizontal sync is 236 master clocks | rung 2 (`covell`) |
+| `hsync-a-clock-short` | `machine.rs` | the VCE's horizontal sync is 236 master clocks, not 237 | rung 2 (`covell`) |
 | `irq-line-is-a-single-flag` | `sockets.rs` | a source letting go of an interrupt line lowers it for every source | `cargo test` (`irq_line_is_a_wired_or_of_sources_never_a_max`) |
 | `work-ram-half-size` | `pagetable.rs` | work RAM mirrors every 4 KiB | rung 2 (`covell`) |
 | `interrupt-registers-unmapped` | `hardware_page.rs` | $FF:1400-17FF answers $FF | rung 2 (`base-probe`) |
 | `state-forgets-the-capture` | `state.rs` | a loaded state keeps the picture rows of the system it is loaded into | `cargo test` (`a_loaded_run_continues_bus_cycle_for_bus_cycle`) |
-| `state-drops-the-polled-lines` | `state.rs` | a state does not carry the lines the CPU's last poll saw (huc6280-python 0.4.0) | `cargo test` (a test the script could not name) |
-| `state-forgets-the-pad-latch` | `state.rs` | a loaded state keeps the SEL/CLR latch of the system it is loaded into | `cargo test` (a test the script could not name) |
+| `state-drops-the-polled-lines` | `state.rs` | a state does not carry the lines the CPU's last poll saw (huc6280-python 0.4.0) | `cargo test` (`a_state_carries_the_lines_the_last_poll_saw`) |
+| `state-forgets-the-pad-latch` | `state.rs` | a loaded state keeps the SEL/CLR latch of the system it is loaded into | rung 6 (`pic-Aero Blasters (USA)`) |
 | `state-takes-the-timer-switch` | `state.rs` | a loaded state overwrites the system's own `underflow_window_mclk` | `cargo test` (`loading_keeps_the_wiring_and_the_switches`) |
 | `no-reset-requested` | `system.rs` | the CPU is put on the board without a reset: no start sequence, no reset vector | rung 2 (`covell`) |
 | `seed-low-bits` | `mt.rs` | a seeded power-on takes the low bits of each random word | rung 5 (`sock-path-rtype`) |
+
+**63 caught, 3 missed**: 34 by rung 2 (Covell's test or the probe card), 13
+by rung 5, 2 by the smoke list, 9 by the unit tests, 4 by the whole library,
+1 by rung 6. Two unit tests were added for faults the broken test stage had
+hidden: `a_state_carries_the_lines_the_last_poll_saw` (tests/state.rs) and
+`the_sprite_access_width_waits_for_the_vertical_blanking` (tests/vdc_wait.rs);
+a third, `a_waited_vram_write_is_made_where_the_wait_ended`, pins the wait's
+time but does not catch `served-access-made-at-the-old-time`.
+
+**The three missed are the board's wait (the reference's issue 0004), not the
+rewrite**, and were missed in 0.2.0 too (hidden by the test stage):
+
+- `served-access-made-at-the-old-time`: probably an equivalent fault. The
+  access made again at the old time finds nothing pending (the wait served
+  it), so it is accepted at once, and the commit time it computes is a CPU
+  slot at or before the time the wait ended, so it commits at once too; the
+  CPU's hold was already applied. No case or test found a difference.
+- `wait-not-settled`: the devices are caught up at the next advance anyway;
+  a difference needs a device read between the wait's end and that advance.
+- `accesses-after-a-stop-made`: needs a decode that touches a second VDC
+  after the first one waits (the lockstep pixel path on `ST0`-`ST2` with a
+  VWR write pending on both), which no case reaches.
+
+What would settle them: a unit test of a two-VDC decode with both VDCs busy,
+and one that reads a port device's state right after a wait; or a probe-card
+section that makes those accesses.
+
+What the 0.2.0 record said (its five "caught by `cargo test` (a test the script could not name)"
+rows were the broken test stage; those faults never went on to the later checks, so its true count
+is not known. Run on 2026-11-19 with the stage fixed: `state-forgets-the-pad-latch` is caught by
+rung 6, `state-drops-the-polled-lines` by the new test, and the three wait faults above are
+missed):
 
 **56 caught, 0 missed**: 30 by rung 2 (Covell's test or the probe card), 12
 by rung 5, 1 by the smoke list, 13 by the unit tests. Rung 3, the whole

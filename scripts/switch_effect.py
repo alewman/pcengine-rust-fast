@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Which rung 5 case does its switch or device actually change?
 
 The lockstep gate proves a switch is wired only on a case where the switch changes what the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The audio mixer: sums the board's audio sources (socket 9) into one stereo stream
 //! (`mixer.py`).
 //!

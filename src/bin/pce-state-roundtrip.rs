@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Rung 6: save states proven by equivalence, and the snapshot pair in a run-ahead pass.
 //!
 //!     pce-state-roundtrip IMAGE [options of trace::Setup] [--at 300] [--to 360] [--extra 777]

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The benchmark: frames per second of this board on a card, with a checksum of every picture,
 //! every audio sample and the snapshot at the end, so a faster build that changes the output
 //! or the state is caught here too.

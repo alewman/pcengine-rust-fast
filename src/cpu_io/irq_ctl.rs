@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The interrupt controller ($1400-$17FF, mirrored every 4 bytes) (`cpu_io/irq_ctl.py`).
 //!
 //! [hw: pcetech 2.1] `$1402`: bits 2-0 are disable bits, 1 = disabled (bit 2 timer, bit 1 IRQ1, bit 0

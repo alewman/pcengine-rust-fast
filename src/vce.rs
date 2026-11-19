@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The HuC6260 VCE: colour table, control register, dot clock, frame length (`vce.py`).
 //!
 //! [mfr: Hudson HuC6260 manual; hw: pcetech 6; doc: wiki "VCE pinout", "Timing"] (MacDonald's

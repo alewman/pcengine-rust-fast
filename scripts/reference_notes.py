@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Two places where pcengine-python v0.1.0's behaviour looked unintended while it was being
 transcribed (its issue 0004), shown on the reference itself (run on its interpreter). Both are
 fixed in v0.2.0, which this repository now follows: the waited-on transfer meets the display

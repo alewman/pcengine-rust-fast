@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Chris Covell's PC-Engine CPU Timing Test into external/covell/ (never committed), by the
 # URL and SHA-256 pcengine-python pins (its scripts/pinned_files.json).
 # Usage: scripts/fetch_covell.sh [DEST]

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Save states (`state.py`): the whole console between two instructions, as bytes, and back.
 //!
 //! As in the reference, a state is everything that changes as the console runs: the CPU
@@ -28,13 +29,15 @@
 //! - **Devices behind a socket trait save themselves** (`sockets::DeviceState`): bytes out,
 //!   bytes in, and an identity. The reference reaches them by the same walk.
 //! - **The named switches**: the reference saves instance attributes (the VDC's `vblank_dots`,
-//!   `vertical_at_line_start`, the DMA's `resume`) and so does this; its class attributes (the
+//!   the DMA's `resume`) and so does this; its class attributes (the
 //!   PSG's switches, the timer's window) are not in a state there, and a loaded state keeps
 //!   the system's own here too, with the VCE's host-side `rgb_table`.
 //! - **Old states are refused, not converted.** The reference's JSON names each field, so it
 //!   loads a state of 0.1.0 with the CPU's new `polled_irq_lines` as `None` (pcengine-python
-//!   0.2.0). bincode names nothing: a body of version 1 does not decode as version 2, and the
-//!   version check refuses it first, with the system untouched (tests/state.rs). A converter
+//!   0.2.0). bincode names nothing: a body of an older version does not decode as the current
+//!   one, and the version check refuses it first, with the system untouched (tests/state.rs).
+//!   The reference's states of 0.2.0 do not load into its clean rewrite either (the sequencer's
+//!   state names are new); here versions 1 and 2 are refused. A converter
 //!   would carry the old layouts of the CPU and the PSG for states nobody keeps (the crate has
 //!   no users who save yet); a state is for the build that made it.
 //! - **A snapshot pair** the reference does not have: `save_snapshot` / `load_snapshot`, the
@@ -60,9 +63,11 @@ use crate::video::{Capture, Timeline};
 
 pub const MAGIC: &[u8; 8] = b"PCERSTAT";
 /// 2 since 0.2.0: the CPU's state gained `polled_irq_lines` (huc6280-rust 0.2.0), the PSG lost
-/// `acc_steps` and gained `levels_units`. A state of version 1 is refused, not converted (see the
+/// `acc_steps` and gained `levels_units`. 3 since the clean rewrite of 2026-11-19: the VDC's line
+/// machine (`Sequencer`), its scroll state and the DMA engine have new fields, and the timer's
+/// window moved within `Timer`. A state of an earlier version is refused, not converted (see the
 /// module's notes).
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// huc6280-rust's `CpuState`, field for field (it does not derive serde).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

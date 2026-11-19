@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The I/O port ($1000-$13FF, one register) and what answers on the pad pins
 //! (`cpu_io/io_port.py`).
 //!

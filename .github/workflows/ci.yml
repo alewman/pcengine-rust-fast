@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 name: CI
 
 # Kept small: main and pull requests, superseded runs cancelled. The lockstep
@@ -6,7 +7,10 @@ name: CI
 # the pads, the mappers on synthetic images, the save-state round trip and
 # refusals on a synthetic card) and rung 1 on Covell's CPU test, fetched by
 # the pin pcengine-python uses. The CPU core, huc6280-rust-fast, comes in by
-# the git revision in Cargo.toml.
+# path from a sibling clone at 73f0829 (Cargo.toml), cloned below; that commit
+# is not on GitHub yet, so CI fails at the clone until huc6280-rust-fast is
+# pushed (then Cargo.toml may go back to the git pin it names, and the clone
+# steps can go).
 on:
   push:
     branches: [main]
@@ -25,6 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: huc6280-rust-fast 73f0829 beside this repository
+        run: |
+          git clone -q https://github.com/alewman/huc6280-rust-fast ../huc6280-rust-fast
+          git -C ../huc6280-rust-fast checkout -q 73f08298fe2dad66973cfe75c6b19a3ea95579d5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -37,6 +45,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: huc6280-rust-fast 73f0829 beside this repository
+        run: |
+          git clone -q https://github.com/alewman/huc6280-rust-fast ../huc6280-rust-fast
+          git -C ../huc6280-rust-fast checkout -q 73f08298fe2dad66973cfe75c6b19a3ea95579d5
       - uses: dtolnay/rust-toolchain@stable
       - run: scripts/fetch_covell.sh
       - run: scripts/rung1.sh external/covell/CPU_Test_10.pce

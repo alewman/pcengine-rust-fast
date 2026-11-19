@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The hardware page, bank $FF ($1FE000-$1FFFFF), as 32 pages of 256 bytes (`hardware_page.py`).
 //!
 //! [hw: pcetech 3]

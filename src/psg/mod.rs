@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The HuC6280 PSG (`psg/`): board-owned; Aubrey's rule: it may move out if a second consumer
 //! ever wants it, never be copied.
 //!

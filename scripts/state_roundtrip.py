@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Rung 6's driver: the save-state round trip and the run-ahead pass on the picture-gate titles.
 
 For each ``pic-`` case of scripts/cases.tsv (the 18 titles of pcengine-python's

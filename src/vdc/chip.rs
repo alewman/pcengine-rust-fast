@@ -1,4 +1,31 @@
-
+// SPDX-License-Identifier: MIT
+//! The HuC6270 VDC as the CPU sees it: the bus port, VRAM access, status, IRQ1 (`vdc/chip.py`).
+//!
+//! Milestone 1 scope (the reference's docs/handoff-brief.md): timing, status/IRQ and the VRAM port
+//! with no tiles. Background and DMA are M2, sprites M3. The registers they will use are stored
+//! already.
+//!
+//! Instances, not module state: a SuperGrafx has two, a PC-FX may one day pin this package.
+//!
+//! Bus ($FF:0000-03FF, 4-byte mirror) [hw: pcetech 5]:
+//!     $0  write: register select (low 5 bits); read: status
+//!     $1  unused, reads 0
+//!     $2  data LSB     $3  data MSB
+//!
+//! Provisional (U1, tier 5): the VDC's CPU access schedule in active display. Hudson's table and
+//! MacDonald's give the mode-0 slot order (CPU, BAT, CPU, ?, CPU, CG0, CPU, CG1) but not the
+//! phase against the line. A VRAM data access made during the display width is *accepted* at once
+//! and *committed* at the next CPU slot of an 8-dot cycle counted from the display start; BSY
+//! (status bit 6) is set until then; a second data access while one is pending holds the CPU
+//! (RDY) until the first commits. Mednafen instead charges a statistical 1-cycle penalty (C4).
+//!
+//! Rust (issue 0004, the board's wait): the reference's `serve` is a callable that runs the whole
+//! board from inside an access. Here it is a flag set by the board; an access that would wait with
+//! it set *stops* (`serve_wanted`, answering $FF), the board serves the chip and makes the decode
+//! again (sockets.rs, `VdcAccess`). An access stops before it changes anything the board can see:
+//! `read` before the buffer is taken; `write` before the word is queued (VWR) or, for MARR's high
+//! byte, after the byte is stored (stored again, the same byte, when the access is made again).
+//! The `hold` callable is an accumulator (`take_hold`).
 use serde::{Deserialize, Serialize};
 
 use crate::machine::{py_floordiv, HSYNC_CLOCKS};
@@ -6,6 +33,7 @@ use crate::mt::PythonRandom;
 use crate::vdc::dma::DmaEngine;
 use crate::vdc::regs as r;
 use crate::vdc::sequencer::{Event, Sequencer, VPhase};
+use crate::vdc::sprites::SPRITE_LIMIT;
 use crate::vdc::{background, sprites};
 
 /// [hw: pcetech 5] 64 KiB; the upper half of the 128 KiB space mirrors it
@@ -27,6 +55,17 @@ pub struct Vdc {
     pub now: i64,
     pub seq: Sequencer,
     pub dma: DmaEngine,
+    /// The background's scroll [mfr: BXR, BYR; emu: MAME huc6270.cpp]: the vertical counter is
+    /// loaded from BYR when the display period starts and when BYR is written (either byte),
+    /// and counts one at every line step, so a write during the display shows as BYR + 1 on
+    /// the next line (the manual's words); both offsets are taken 16 dots before the display
+    /// start (vdc/sequencer.rs `SCROLL_LATCH_DOTS`, a closed-box fit).
+    pub(crate) bg_y_counter: i64,
+    /// the offsets the line being drawn was taken with
+    pub(crate) bg_x_offset: i64,
+    pub(crate) bg_y_offset: i64,
+    /// MWR bits 6-0 as the last vertical blanking took them
+    pub(crate) mwr_cache: u16,
     pub(crate) row: Option<Vec<u16>>,
     pub(crate) sprite_entries: Vec<sprites::Entry>,
     /// A pending CPU VRAM write: (address, word)
@@ -54,12 +93,10 @@ fn earlier(a: Option<i64>, b: Option<i64>) -> Option<i64> {
 }
 
 impl Vdc {
-    /// The reference's defaults: `vblank_dots = Some(-8)`, `vertical_at_line_start = false`,
-    /// `dma_resumes = true`.
+    /// The reference's defaults: `vblank_dots = Some(-16)`, `dma_resumes = true`.
     pub fn new(
         power_on: Option<&mut PythonRandom>,
         vblank_dots: Option<i64>,
-        vertical_at_line_start: bool,
         dma_resumes: bool,
     ) -> Vdc {
         // U7: zeros by default, random on request.
@@ -80,8 +117,12 @@ impl Vdc {
             sat,
             status: 0,
             now: 0,
-            seq: Sequencer::new(vblank_dots, vertical_at_line_start),
+            seq: Sequencer::new(vblank_dots),
             dma: DmaEngine::new(dma_resumes),
+            bg_y_counter: 0,
+            bg_x_offset: 0,
+            bg_y_offset: 0,
+            mwr_cache: 0,
             row: None,
             sprite_entries: Vec::new(),
             pending_write: None,
@@ -167,10 +208,9 @@ impl Vdc {
         self.seq_hsync(mclk, divider);
     }
 
+    /// The VCE's vertical sync falls (after this line's `hsync`).
     pub fn vsync(&mut self) {
         self.seq_vsync();
-        self.need_bg_y_step = false;
-        self.mwr_cache = self.regs.mwr();
     }
 
     // -- events from the sequencer ----------------------------------------------------------------
@@ -186,6 +226,80 @@ impl Vdc {
         // line; values outside $40-$146 never match.
         if count == self.regs.rcr() - 0x40 && self.regs.cr() & r::CR_RASTER_IRQ != 0 {
             self.status |= r::RR;
+        }
+    }
+
+    /// The line step (the end of the horizontal sync): the vertical scroll counts a line.
+    pub(crate) fn line_begins(&mut self) {
+        self.row = None; // the last line's row has been taken; this line's is drawn anew
+        self.bg_y_counter = (self.bg_y_counter + 1) & 0x1FF;
+    }
+
+    /// The first line of the display period: the vertical scroll starts again at BYR.
+    pub(crate) fn display_period_starts(&mut self) {
+        self.bg_y_counter = (self.regs.value[r::BYR] & 0x1FF) as i64;
+        self.display_started();
+    }
+
+    /// Shortly before the display start: the offsets this line is drawn with [mfr: BXR "valid
+    /// with the next scanning line"; BYR as counted]. BXR has 10 bits and BYR 9 [mfr: register
+    /// figures].
+    pub(crate) fn latch_scroll(&mut self) {
+        self.bg_x_offset = (self.regs.value[r::BXR] & 0x3FF) as i64;
+        self.bg_y_offset = self.bg_y_counter;
+    }
+
+    /// The vertical blanking period begins: the VD flag, the MWR fields that change only now
+    /// [mfr: MWR VM, SM, SCREEN "valid at the beginning of a vertical blanking period"; CM is
+    /// taken at each line], and the sprite-table transfer [mfr: DVSSR note (b)].
+    pub(crate) fn vblank_begins(&mut self) {
+        self.vblank_test();
+        self.mwr_cache = self.regs.mwr() & 0x7F;
+        self.display_ended();
+    }
+
+    /// The sprites of display line `line`, fetched in the blanking before it [mfr: 2.4.1 (6),
+    /// status OR]. The manual's table limits both steps by the horizontal registers:
+    ///
+    /// - SAT entries searched: all 64 when the display is 32 characters or wider (d = HDW + 1
+    ///   >= 32), else 2d + 1 with sprite access width 1 or 2 (SM 0, 1), 2d with SM 2, 3;
+    /// - patterns fetched: 2(e - 2) with SM 0 or 1, e - 2 with SM 2, (e - 2) / 2 with SM 3, at
+    ///   most 16, where e = HDE + HSW + HDS + 3 is the blanking in characters.
+    ///
+    /// A sprite that is searched but not fetched sets OR (the manual's second case), as a 17th
+    /// does (the first). Counted in 16-dot patterns (a 32-wide sprite is two), as `sprites::scan`
+    /// counts them: a reading of "number of sprites", provisional.
+    pub(crate) fn fetch_sprites(&mut self, line: i64) {
+        let regs = &self.regs;
+        let mwr = self.mwr_cache | (regs.mwr() & 0x80);
+        let sm = ((mwr >> 2) & 3) as usize;
+        let d = regs.hdw() + 1;
+        let e = regs.hde() + (regs.value[r::HSR] & 0x1F) as i64 + regs.hds() + 3;
+        let searched = if d >= 32 {
+            64
+        } else if sm < 2 {
+            2 * d + 1
+        } else {
+            2 * d
+        };
+        let fetched = [2 * (e - 2), 2 * (e - 2), e - 2, py_floordiv(e - 2, 2)][sm];
+        let fetched = fetched.min(SPRITE_LIMIT as i64).max(0) as usize;
+        let (mut entries, mut overflow) = sprites::scan(
+            &self.vram,
+            VRAM_WORDS,
+            &self.sat,
+            line,
+            mwr,
+            SPRITE_LIMIT,
+            searched as usize,
+        );
+        if entries.len() > fetched {
+            entries.truncate(fetched);
+            overflow = true;
+        }
+        self.sprite_entries = entries;
+        if overflow && self.regs.cr() & r::CR_OVERFLOW_IRQ != 0 {
+            self.status |= r::OR;
         }
     }
 
@@ -207,9 +321,9 @@ impl Vdc {
         self.dma_advance(self.now);
     }
 
-    /// The 9-bit pixels of this line, drawn as the display width begins. [hw: pcetech 5.2, 6]
-    /// Backdrop (background colour 0, $000) inside the width if either layer is on, overscan
-    /// (sprite colour 0, $100) otherwise and outside.
+    /// The 9-bit pixels of this line, drawn as the display width begins (M2: background only;
+    /// the sprites are M3). [hw: pcetech 5.2, 6] Backdrop (background colour 0, $000) inside the
+    /// width if either layer is on, overscan (sprite colour 0, $100) otherwise and outside.
     pub(crate) fn render_line(&mut self) {
         let seq = &self.seq;
         let dots = (1365 / seq.divider) as usize;
@@ -228,10 +342,10 @@ impl Vdc {
         let divider = seq.divider;
         let end = (first + width).min(dots as i64);
         if first >= end {
-            // Not reachable: a display start at or past the row's end is later than the next
-            // line's sync, which drops this line's events before `render_line` runs
-            // (sequencer.rs, `seq_leave_hsync`; the reference's comment cites issue 0004: the hdw
-            // event lands at most at the row's last dot). Kept so the slices below cannot panic.
+            // first <= dots: a display start past the row's end is never scheduled (the next line
+            // step restarts the horizontal periods first: vdc/sequencer.rs). An empty width
+            // draws nothing, as the reference's empty slices do; kept so the slices below cannot
+            // panic.
             self.row = Some(row);
             return;
         }
@@ -243,7 +357,7 @@ impl Vdc {
             background::row_into(
                 &self.vram,
                 VRAM_WORDS,
-                self.mwr_cache,
+                self.mwr_cache | (self.regs.mwr() & 0x80), // [mfr: MWR CM "with the next line"]
                 self.bg_x_offset,
                 self.bg_y_offset,
                 shown,
@@ -259,8 +373,8 @@ impl Vdc {
             let hit = sprites::draw(&self.sprite_entries, end - first, &mut row, first_index);
             if let Some(hit) = hit {
                 if self.regs.cr() & r::CR_COLLISION_IRQ != 0 {
-                    // the flag rises when the beam reaches the pixel (Mesen2 runs the VDC per CPU cycle
-                    // for this; Mednafen raises it as the line is drawn): U3
+                    // U3/U26, a choice: the flag rises when the beam reaches the pixel (the
+                    // emulators observed differ: some raise it as the line is drawn)
                     collision = Some(row_start + (first + hit) * divider);
                 }
             }
@@ -313,8 +427,8 @@ impl Vdc {
         if self.pending_read.is_some() {
             // The word the last MARR write or VRR read asked for is not in the buffer yet (it
             // waits for a CPU slot or a DMA): the CPU waits for it rather than reading the old
-            // word. The manual's read sequence and both Mednafen and Mesen2 ("D&D Order of the
-            // Griffon breaks without this") agree; the model's slot wait made the case possible.
+            // word [mfr: the read sequence MARR, then VRR]; the model's slot wait made the case
+            // possible (observed: Mednafen and Mesen2 wait too; D&D Order of the Griffon needs it).
             mclk = self.data_access(mclk);
         }
         let value = if msb {
@@ -330,6 +444,68 @@ impl Vdc {
             self.schedule_commit(mclk);
         }
         value
+    }
+
+    /// [hw: pcetech 5.1; mfr: Hudson HuC6270 manual, registers AR, VWR, MARR, BYR, LENR,
+    /// DVSSR] Port 0 selects the register; ports 2/3 write its low/high byte. VWR's low byte goes
+    /// to the write latch only; its high byte writes latch and byte to VRAM at MAWR, which then
+    /// advances by CR's increment. MARR's high byte starts the read into the buffer. LENR's
+    /// high byte starts the VRAM -> VRAM transfer, DVSSR's arms the sprite-table transfer.
+    /// Registers outside the valid set ignore writes.
+    pub fn write(&mut self, offset: u32, value: u8, mut mclk: i64) {
+        self.catch_up(mclk);
+        let port = offset & 3;
+        if port == 0 {
+            self.regs.select = value & 0x1F;
+            return;
+        }
+        if port == 1 {
+            return;
+        }
+        let msb = port == 3;
+        let register = self.regs.select as usize;
+        if register == r::VRW {
+            if !msb {
+                self.regs.write_latch = value;
+                return;
+            }
+            if self.serve && self.bsy() {
+                // `data_access` would wait: the board serves it first (module notes)
+                self.serve_wanted = true;
+                return;
+            }
+            // a second data access while one is pending holds the CPU until it commits
+            mclk = self.data_access(mclk);
+            let address = self.regs.value[r::MAWR];
+            self.pending_write = Some((
+                address,
+                ((value as u16) << 8) | self.regs.write_latch as u16,
+            ));
+            self.regs.value[r::MAWR] = address.wrapping_add(self.regs.increment());
+            self.schedule_commit(mclk);
+            return;
+        }
+        if !r::valid_register(register as u8) {
+            return;
+        }
+        self.regs.set_byte(register, value, msb);
+        if register == r::BYR {
+            // [emu: MAME huc6270.cpp] either byte reloads the vertical scroll counter
+            self.bg_y_counter = (self.regs.value[r::BYR] & 0x1FF) as i64;
+        } else if msb && register == r::MARR {
+            if self.serve && self.bsy() {
+                // `data_access` would wait: the board serves it first (module notes)
+                self.serve_wanted = true;
+                return;
+            }
+            mclk = self.data_access(mclk);
+            self.pending_read = Some(self.regs.value[r::MARR]);
+            self.schedule_commit(mclk);
+        } else if msb && register == r::LENR {
+            self.dma_start(mclk);
+        } else if msb && register == r::SATB {
+            self.dma_arm_satb();
+        }
     }
 
     // -- VRAM access timing -----------------------------------------------------------------------
@@ -359,8 +535,12 @@ impl Vdc {
         while self.bsy() && self.dma.busy() {
             // the pending access is stuck behind a transfer
             let Some(due) = self.dma_next_event() else {
-                // paused behind the display: nothing to wait for but the end of it
-                self.dma_force_complete(now);
+                // paused behind a display no sync will ever end
+                let end = self.dma_finish_without_display(now);
+                if end > now {
+                    self.hold(end - now);
+                    now = end;
+                }
                 break;
             };
             if due > now {
@@ -395,7 +575,7 @@ impl Vdc {
     /// Earliest time at or after `mclk` that the CPU owns a VRAM slot (U1, provisional).
     pub fn slot_time(&self, mclk: i64) -> i64 {
         let seq = &self.seq;
-        if !(seq.active_display() && (seq.active_start..seq.active_end).contains(&mclk)) {
+        if !(seq.active_display && (seq.active_start..seq.active_end).contains(&mclk)) {
             return mclk;
         }
         let div = seq.divider;

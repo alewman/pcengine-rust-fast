@@ -226,11 +226,11 @@ sw-start-line-probe	120	$PROBE	--start-line 260
 sw-start-offset-probe	120	$PROBE	--start-offset 500
 sw-vblank-none-probe	120	$PROBE	--vblank-dots none
 sw-vblank-0-probe	120	$PROBE	--vblank-dots 0
-sw-vertical-at-line-start-probe	120	$PROBE	--vertical-at-line-start
-sw-vertical-at-line-start-none-probe	120	$PROBE	--vertical-at-line-start --vblank-dots none
+sw-vblank-18-probe	120	$PROBE	--vblank-dots -18
 sw-no-dma-resume-probe	120	$PROBE	--no-dma-resume
 sw-timer-window-0-probe	120	$PROBE	--timer-window 0
 sw-timer-window-1-probe	120	$PROBE	--timer-window 1
+sw-timer-window-15-probe	120	$PROBE	--timer-window 15
 sw-no-bit2-lines-probe	120	$PROBE	--no-bit2-lines
 sw-psg-mame-probe	120	$PROBE	--psg-variant mame
 sw-psg-mednafen-probe	120	$PROBE	--psg-variant mednafen
@@ -252,11 +252,11 @@ sw-start-line-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --start-lin
 sw-start-offset-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --start-offset 500 --press run@200+10
 sw-vblank-none-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --vblank-dots none --press run@200+10
 sw-vblank-0-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --vblank-dots 0 --press run@200+10
-sw-vertical-at-line-start-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --vertical-at-line-start --press run@200+10
-sw-vertical-at-line-start-none-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --vertical-at-line-start --vblank-dots none --press run@200+10
+sw-vblank-18-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --vblank-dots -18 --press run@200+10
 sw-no-dma-resume-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --no-dma-resume --press run@200+10
 sw-timer-window-0-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --timer-window 0 --press run@200+10
 sw-timer-window-1-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --timer-window 1 --press run@200+10
+sw-timer-window-15-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --timer-window 15 --press run@200+10
 sw-no-bit2-lines-bonk	300	$LIB/Bonk's Adventure (USA).7z	--machine tg16 --no-bit2-lines --press run@200+10
 sw-psg-mame-aero	300	$LIB/Aero Blasters (USA).7z	--machine tg16 --psg-variant mame --press run@200+10
 sw-psg-mednafen-aero	300	$LIB/Aero Blasters (USA).7z	--machine tg16 --psg-variant mednafen --press run@200+10

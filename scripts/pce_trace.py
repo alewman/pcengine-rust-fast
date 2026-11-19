@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """The lockstep gate's reference side: pcengine-python, traced frame by frame.
 
 Run on the reference's interpreter (external/pcengine-python/.venv-pypy). Each line is one
@@ -12,7 +13,7 @@ little-endian u16, then the dividers), the count and SHA-1 of the mixed audio
 
     pce_trace.py IMAGE --frames N [--machine pce|tg16] [--press BUTTONS@FRAME+HOLD ...]
                  [--seed N] [--start-line N] [--start-offset N] [--vblank-dots N|none]
-                 [--vertical-at-line-start] [--no-dma-resume] [--psg NAME=VALUE ...]
+                 [--no-dma-resume] [--psg NAME=VALUE ...]
                  [--psg-variant NAME] [--timer-window N] [--no-bit2-lines] [--device NAME]
                  [--detail FRAME] --out FILE
 
@@ -251,7 +252,6 @@ def make(a: argparse.Namespace):
         start_line=a.start_line,
         start_offset=a.start_offset,
         vblank_dots=None if a.vblank_dots == "none" else int(a.vblank_dots),
-        vertical_at_line_start=a.vertical_at_line_start,
         dma_resumes=a.dma_resume,
     )
     if port is not None:
@@ -345,12 +345,11 @@ def main() -> int:
     p.add_argument("--seed", type=int)
     p.add_argument("--start-line", type=int, default=0)
     p.add_argument("--start-offset", type=int, default=0)
-    p.add_argument("--vblank-dots", default="-8")
-    p.add_argument("--vertical-at-line-start", action="store_true")
+    p.add_argument("--vblank-dots", default="-16")
     p.add_argument("--no-dma-resume", dest="dma_resume", action="store_false")
     p.add_argument("--psg", action="append", default=[], metavar="NAME=VALUE")
     p.add_argument("--psg-variant", choices=sorted(VARIANTS))
-    p.add_argument("--timer-window", type=int, default=15)
+    p.add_argument("--timer-window", type=int, default=3)
     p.add_argument("--no-bit2-lines", dest="bit2_lines", action="store_false")
     p.add_argument("--device", default="pad2")
     p.add_argument("--detail", type=int)

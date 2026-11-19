@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! SF2, Populous, Tennokoe and the card factory on synthetic images (the reference's
 //! tests/test_card_mappers.py; docs/cartridge.md: emulator tier for all three).
 
@@ -115,7 +116,7 @@ fn the_factory_picks_plain_for_everything_else_and_strips_a_copier_header() {
         .starts_with("Sf2Card"));
 }
 
-/// [emu: Mednafen `x % (len / 8192)`] the odd sizes of the library (72 KiB .. 872 KiB).
+/// [emu: Mednafen, observed: the image repeats modulo its length in pages] the odd sizes of the library (72 KiB .. 872 KiB).
 #[test]
 fn odd_sizes_repeat_modulo_the_image_u18() {
     for count in [9usize, 15, 91, 96, 98, 109] {

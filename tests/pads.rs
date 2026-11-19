@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Pads against pcetech section 4 (2-button, Turbo Tap) and pce-devel's PCE_Controller_Info
 //! (6-button scans, multitap port table): the reference's tests/test_pads.py.
 

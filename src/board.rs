@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The board: one timeline in master clocks, the page table, and the devices around the CPU
 //! (`board.py`).
 //!
@@ -73,9 +74,9 @@ pub struct BoardOptions {
     /// The raster line at time zero (U1: the real power-up phase is not published).
     pub start_line: i64,
     pub start_offset: i64,
-    /// U19: see `vdc::sequencer::Sequencer::vblank_dots`.
+    /// U19: see `vdc::sequencer::Sequencer::vblank_dots` (default `Some(-16)`; `None` is the
+    /// display start of the line).
     pub vblank_dots: Option<i64>,
-    pub vertical_at_line_start: bool,
     /// C7: see vdc/dma.rs.
     pub dma_resumes: bool,
     /// The PSG's switches (class attributes of the reference's `Psg`).
@@ -95,11 +96,10 @@ impl Default for BoardOptions {
             power_on_seed: None,
             start_line: 0,
             start_offset: 0,
-            vblank_dots: Some(-8),
-            vertical_at_line_start: false,
+            vblank_dots: Some(-16),
             dma_resumes: true,
             psg: PsgSwitches::default(),
-            timer_underflow_window_mclk: 15,
+            timer_underflow_window_mclk: 3,
         }
     }
 }
@@ -177,12 +177,7 @@ impl Board {
         let vce = Vce::new(rng.as_mut());
         let vdcs: Vec<Vdc> = (0..machine.vdc_count)
             .map(|_| {
-                let mut vdc = Vdc::new(
-                    rng.as_mut(),
-                    options.vblank_dots,
-                    options.vertical_at_line_start,
-                    options.dma_resumes,
-                );
+                let mut vdc = Vdc::new(rng.as_mut(), options.vblank_dots, options.dma_resumes);
                 vdc.serve = true; // the reference's `serve=self._serve_vram`
                 vdc
             })
@@ -860,7 +855,9 @@ impl Board {
         for vdc in self.vdcs.iter_mut() {
             vdc.hsync(at, divider);
             if vsync {
-                vdc.vsync(); // [emu: Mednafen] after the hsync of the same line
+                // after the line's hsync [emu: MAME huc6260.cpp: VSync changes 30 master cycles
+                // after HSync falls; the VDC acts on it at the line step]
+                vdc.vsync();
             }
         }
     }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Save states (state.rs): a saved and loaded run continues as the run that was not
 //! interrupted; the refusals; the snapshot pair. The reference's tests/test_state.py on its
 //! own synthetic card, so nothing here needs a ROM.
@@ -270,7 +271,21 @@ fn a_state_of_the_previous_format_is_refused() {
     system.run_frame();
     let error = refusal(&mut system, old);
     assert!(
-        error.contains("version 1, not 2"),
+        error.contains("version 1, not 3"),
+        "unexpected refusal: {error}"
+    );
+}
+
+/// A state saved by pcengine-rust 0.2.0 (format version 2, the VDC's withdrawn line machine)
+/// from `program()` after one frame: refused cleanly, not converted (state.rs).
+#[test]
+fn a_state_of_the_withdrawn_line_machine_is_refused() {
+    let old = include_bytes!("data/state-v2.pcestate");
+    let mut system = system_with(rom(&program()), PC_ENGINE);
+    system.run_frame();
+    let error = refusal(&mut system, old);
+    assert!(
+        error.contains("version 2, not 3"),
         "unexpected refusal: {error}"
     );
 }
@@ -287,4 +302,37 @@ fn loading_keeps_the_vdcs_wired_to_the_boards_wait() {
     let snapshot = save_snapshot(&system);
     load_snapshot(&mut other, &snapshot).unwrap();
     assert!(other.board().vdcs.iter().all(|vdc| vdc.serve));
+}
+
+/// The CPU's `polled_irq_lines` (huc6280-python 0.4.0, cleared at each boundary since 6ce348e)
+/// is in a state: found at a boundary where it is set (a timer interrupt line that rises and
+/// is acknowledged in a loop with interrupts masked, so it changes in some instruction's last
+/// cycle sooner or later), saved and loaded, the CPU's state is equal field for field.
+#[test]
+fn a_state_carries_the_lines_the_last_poll_saw() {
+    let code: &[u8] = &[
+        0x78, // SEI
+        0xA9, 0xFF, 0x53, 0x02, // LDA #$FF; TAM #$02: the hardware page at $2000
+        0xA9, 0x00, 0x8D, 0x00, 0x2C, // LDA #0; STA $2C00: timer latch 0
+        0xA9, 0x01, 0x8D, 0x01, 0x2C, // LDA #1; STA $2C01: timer on
+        0x8D, 0x03, 0x34, // loop ($E00F): STA $3403 (acknowledge the timer)
+        0xEA, 0xEA, // NOP; NOP
+        0x4C, 0x0F, 0xE0, // JMP loop
+    ];
+    let mut data = image(0x2000);
+    data[..code.len()].copy_from_slice(code);
+    let mut system = system_with(rom(&data), PC_ENGINE);
+    let mut found = false;
+    for _ in 0..2_000_000 {
+        system.step();
+        if system.cpu.capture_state().polled_irq_lines.is_some() {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no boundary with the poll's lines set");
+    let state = save_state(&system);
+    let mut other = system_with(rom(&data), PC_ENGINE);
+    load_state(&mut other, &state).unwrap();
+    assert_eq!(system.cpu.capture_state(), other.cpu.capture_state());
 }

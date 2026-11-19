@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The PSG's level curve is a written-out table (so every target has the same doubles); on the
 //! targets where the reference was run, the platform's `powf` gives the same values.
 

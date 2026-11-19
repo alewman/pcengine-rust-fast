@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Write scripts/cases.tsv, the lockstep gate's cases: name, frames, image, arguments.
 
 The image column uses ``$LIB`` (the HuCard library, 179 ``.7z``), ``$COVELL`` (Covell's CPU
@@ -31,13 +32,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# The defaults are the author's layout: set LIB, COVELL and SF2 (which defaults to the card's
-# No-Intro name in the default LIB, not in a LIB you set) to your own files.
-_LIB = "/data/emu/roms-retrobat/pcengine"
+# No machine path here (the family's rule: romsets by environment variable). LIB (the directory
+# of the 179 HuCard .7z images, No-Intro names) has no default; SF2 defaults to the card's No-Intro
+# name under $NO_INTRO_DIR's PC Engine set; COVELL to where scripts/fetch_covell.sh puts the test.
+_NO_INTRO_PCE = Path(os.environ.get("NO_INTRO_DIR", "NO_INTRO_DIR-unset")) / "NEC - PC Engine - TurboGrafx-16"
 DEFAULTS = {
-    "LIB": _LIB,
-    "COVELL": "/data/emu/pcengine-python/tests/test_roms/CPU_Test/CPU_Test_10.pce",
-    "SF2": f"{_LIB}/Street Fighter II' - Champion Edition (Japan).zip",
+    "LIB": "LIB-unset",
+    "COVELL": str(HERE.parent / "external" / "covell" / "CPU_Test_10.pce"),
+    "SF2": str(_NO_INTRO_PCE / "Street Fighter II' - Champion Edition (Japan).zip"),
     "PROBE": str(HERE.parent / "scratch" / "probe.pce"),
 }
 
@@ -175,11 +177,11 @@ def main() -> int:
         ("start-offset", "--start-offset 500"),
         ("vblank-none", "--vblank-dots none"),
         ("vblank-0", "--vblank-dots 0"),
-        ("vertical-at-line-start", "--vertical-at-line-start"),
-        ("vertical-at-line-start-none", "--vertical-at-line-start --vblank-dots none"),
+        ("vblank-18", "--vblank-dots -18"),  # the best fit to Covell's photographs
         ("no-dma-resume", "--no-dma-resume"),
         ("timer-window-0", "--timer-window 0"),
         ("timer-window-1", "--timer-window 1"),
+        ("timer-window-15", "--timer-window 15"),  # the withdrawn default
         ("no-bit2-lines", "--no-bit2-lines"),
         ("psg-mame", "--psg-variant mame"),
         ("psg-mednafen", "--psg-variant mednafen"),
@@ -187,9 +189,10 @@ def main() -> int:
     board += [(f"psg-{s.split('=')[0]}", f"--psg {s}") for s in PSG_SWITCHES]
     for name, args in board:
         rows.append((f"sw-{name}-probe", 120, "$PROBE", args))
-    for name, args in board[:11]:
+    on_bonk = [name for name, _ in board].index("psg-mame")
+    for name, args in board[:on_bonk]:
         rows.append((f"sw-{name}-bonk", 300, bonk, f"{tg} {args} {run}"))
-    for name, args in board[11:]:
+    for name, args in board[on_bonk:]:
         rows.append((f"sw-{name}-aero", 300, aero, f"{tg} {args} {run}"))
     rows.append(("sw-timer-window-0-battle-royale", 300, "$LIB/Battle Royale (USA).7z",
                  f"{tg} --timer-window 0 {run}"))  # fmt: skip

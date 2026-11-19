@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The machine as a whole: a board, a CPU on it, and frame-by-frame running (`system.py`).
 //!
 //! The CPU is huc6280-rust's `HuC6280` with the board as its bus: one `step()` runs one

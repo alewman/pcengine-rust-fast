@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """The lockstep gate: run each case on both boards and compare the traces.
 
 Each case of ``scripts/cases.tsv`` runs ``pce-trace`` (this board) and ``scripts/pce_trace.py``

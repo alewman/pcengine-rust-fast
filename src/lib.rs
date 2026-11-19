@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! A Rust PC Engine / TurboGrafx-16 board transcribed from
 //! [pcengine-python](https://github.com/alewman/pcengine-python) at `v0.1.0`
 //! (`bc9b976`) and proven equivalent to it: every CPU bus cycle, every frame's

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Issue 0004 of the reference, settled in pcengine-python 0.2.0: the board's own events run
 //! while the CPU waits on a VDC access, and the PSG's level table follows `silent_units`. The
 //! reference's `tests/test_vdc_background.py` (`test_a_cpu_waiting_on_a_dma_*`) and
@@ -97,6 +98,37 @@ fn a_cpu_waiting_on_a_dma_is_held_through_the_display_while_it_is_paused_c7() {
     assert_eq!(copied, [0, 0x800, 0xFFF]);
 }
 
+/// The clean rewrite (2026-11-19; the reference's chip.py `write`): DVSSR's high byte arms the
+/// sprite-table transfer [mfr: "triggered by access to the high byte"] and its low byte alone
+/// does not. Checked here on its own because the Rust code this replaced was withdrawn unread,
+/// so whether it ever armed on the low byte is not known from it; the reference states the rule.
+#[test]
+fn only_dvssrs_high_byte_arms_the_sprite_table_transfer() {
+    for (high, copied) in [(false, 0u16), (true, 0x1234)] {
+        let board = Board::new(BoardOptions {
+            machine: FIXED_263,
+            ..BoardOptions::default()
+        })
+        .unwrap();
+        let mut cpu = ScriptedCpu::new(board, true);
+        standard_display(&mut cpu, 0x0080);
+        cpu.board.vdcs[0].vram[0x7F00] = 0x1234;
+        cpu.write(VDC_ADDR, r::SATB as u8);
+        if high {
+            cpu.write(VDC_ADDR + 2, 0x00);
+            cpu.write(VDC_ADDR + 3, 0x7F);
+        } else {
+            cpu.board.vdcs[0].regs.value[r::SATB] = 0x7F00; // the address, without a write to it
+            cpu.write(VDC_ADDR + 2, 0x00);
+        }
+        cpu.board.advance(LINE_CLOCKS * 263);
+        assert_eq!(
+            cpu.board.vdcs[0].sat[0], copied,
+            "high byte written: {high}"
+        );
+    }
+}
+
 fn w(psg: &mut Psg, reg: u32, value: u8) {
     let at = 6 * psg.step;
     psg.write(reg, value, at);
@@ -176,4 +208,76 @@ fn a_decode_made_again_after_a_wait_does_not_repeat_the_accesses_made_before_it(
     let (first, second) = (vdcs[0].regs.value[r::MAWR], vdcs[1].regs.value[r::MAWR]);
     assert!(second > 1000, "the loop ran: {second} writes");
     assert_eq!(first, second, "each ST2 reaches each VDC once");
+}
+
+/// A VRAM write the CPU waited for is made where the wait ended (the reference's
+/// `_data_access`: `mclk = max(served, mclk)`). With MWR's access mode 3 the CPU has no slot in
+/// the display, so a first VWR write is pending until the display width ends; a second waits
+/// for it, and is made after the width, where it commits at once: not pending past the access.
+#[test]
+fn a_waited_vram_write_is_made_where_the_wait_ended() {
+    let board = Board::new(BoardOptions {
+        machine: FIXED_263,
+        ..BoardOptions::default()
+    })
+    .unwrap();
+    let mut cpu = ScriptedCpu::new(board, true);
+    standard_display(&mut cpu, 0x0080);
+    // access mode 3: no CPU slot during the display
+    vdc_reg(&mut cpu, r::MWR, 0x0003);
+    // into frame 1, line 40 (a display line), 600 master clocks after its start: in the width
+    let to = LINE_CLOCKS * (263 + 40) + 600 - cpu.board.mclk;
+    cpu.board.advance(to);
+    vdc_reg(&mut cpu, r::MAWR, 0x0100);
+    cpu.write(VDC_ADDR, r::VRW as u8);
+    cpu.write(VDC_ADDR + 2, 0x34);
+    cpu.write(VDC_ADDR + 3, 0x12); // accepted, pending to the width's end (BSY)
+    assert!(cpu.board.vdcs[0].bsy());
+    let before = cpu.board.mclk;
+    cpu.write(VDC_ADDR + 2, 0x78);
+    cpu.write(VDC_ADDR + 3, 0x56); // waits for the first, then is made after the width
+    assert!(cpu.board.mclk > before + 100, "the CPU was held");
+    let vdc = &cpu.board.vdcs[0];
+    assert!(
+        !vdc.bsy(),
+        "made where the wait ended, outside the width: committed at once"
+    );
+    assert_eq!((vdc.vram[0x100], vdc.vram[0x101]), (0x1234, 0x5678));
+}
+
+/// MWR's sprite access width (SM) is taken at the vertical blanking, not live [mfr: MWR "valid
+/// at the beginning of a vertical blanking period"; the reference's `fetch_sprites` reads
+/// `_mwr_cache | (mwr & 0x80)`]. A sprite whose pattern has only plane 2 set shows colour 4 with
+/// four planes (SM 0) and nothing with SM 1's two; SM 1 written during the display period does
+/// not reach this frame's sprites.
+#[test]
+fn the_sprite_access_width_waits_for_the_vertical_blanking() {
+    let board = Board::new(BoardOptions {
+        machine: FIXED_263,
+        ..BoardOptions::default()
+    })
+    .unwrap();
+    let mut cpu = ScriptedCpu::new(board, true);
+    standard_display(&mut cpu, 0x0040); // sprites only
+    {
+        let vdc = &mut cpu.board.vdcs[0];
+        vdc.sat[..4].copy_from_slice(&[64 + 50, 32, 0x100 << 1, 0]); // display line 50, column 0
+        for row in 0..16 {
+            vdc.vram[0x100 * 64 + 32 + row] = 0xFFFF; // plane 2 only
+        }
+    }
+    // the VCE's colour 0x104 (sprite palette 0, colour 4) set to a value the row shows
+    for (offset, value) in [(0x402, 0x04), (0x403, 0x01), (0x404, 0x55), (0x405, 0x01)] {
+        cpu.write(VDC_ADDR + offset, value);
+    }
+    cpu.board.advance(LINE_CLOCKS * (263 + 40) - cpu.board.mclk); // frame 1, display line 15
+    vdc_reg(&mut cpu, r::MWR, 0x0004); // SM 1, in the display period
+    cpu.board
+        .advance(LINE_CLOCKS * (2 * 263 + 5) - cpu.board.mclk);
+    let frame = cpu.board.capture.last_frame.as_ref().unwrap();
+    let row = &frame.rows[(25 + 50 - 14) as usize];
+    assert_eq!(
+        row[24], 0x155,
+        "the frame's sprites keep the width the last vblank took"
+    );
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Python's `random.Random(seed)` for an integer seed, as far as the reference's
 //! `power_on_seed` uses it: the Mersenne Twister MT19937 seeded by `init_by_array` over the
 //! seed's 32-bit words, and `getrandbits(k)` for k <= 32 (the top k bits of one output).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The I/O buffer: the last value read from or written to $0800-$17FF (`cpu_io/io_buffer.py`).
 //!
 //! [hw: pcetech 3 note 1] Reads of some locations return buffer bits where the manual says

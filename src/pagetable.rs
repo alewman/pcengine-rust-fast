@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! One decode for every bus master: the 8192-entry page table (`pagetable.py`).
 //!
 //! A page is 256 bytes of the 21-bit physical space. Each page has a handler; the board fills

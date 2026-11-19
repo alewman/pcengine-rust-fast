@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The background layer: one line of 9-bit pixels from the BAT and the character generator
 //! (`vdc/background.py`).
 //!
@@ -7,8 +8,8 @@
 //! and name, no flips and no priority. Only names 0-2047 exist in 64 KiB of VRAM; the rest read as
 //! 0 here (U23).
 //!
-//! The line is drawn in one go when the display width begins, from the scroll registers latched a few
-//! dots earlier, as Mednafen does (tier 5, U3); a VRAM change during the line shows on the next one.
+//! The line is drawn in one go when the display width begins, from the scroll offsets taken then
+//! (vdc/sequencer.rs; U3, provisional); a VRAM change during the line shows on the next one.
 //!
 //! Differences forced by Rust: none in behaviour. The reference's per-instance decode cache (a
 //! dict that only saves PyPy time) is not carried over; the eight pixels are decoded each time

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """A gate that cannot fail proves nothing: build the board with one fault at a time and check
 that some rung catches each.
 
@@ -234,6 +235,103 @@ FAULTS = {
         "(self.value[VDW] & 0xFF) as i64",
         "the display height register is 8 bits wide",
     ),
+    # vdc: the clean rewrite of 2026-11-19 (the line machine, the scroll, the DMAs, the budget)
+    "display-start-a-character-late": (
+        "vdc/sequencer.rs",
+        "let start = now + (self.regs.hds() + 1) * CHARACTER_DOTS * self.seq.divider;",
+        "let start = now + (self.regs.hds() + 2) * CHARACTER_DOTS * self.seq.divider;",
+        "the display starts HDS + 2 characters after the line step, not HDS + 1",
+    ),
+    "scroll-latched-a-character-early": (
+        "vdc/sequencer.rs",
+        "let latch = now.max(start - SCROLL_LATCH_DOTS * self.seq.divider);",
+        "let latch = now.max(start - (SCROLL_LATCH_DOTS + 8) * self.seq.divider);",
+        "the scroll is taken 24 dots before the display start, not 16 (the closed-box fit)",
+    ),
+    "byr-reloads-on-the-msb-only": (
+        "vdc/chip.rs",
+        "        if register == r::BYR {",
+        "        if register == r::BYR && msb {",
+        "a write of BYR's low byte alone does not reload the vertical scroll counter",
+    ),
+    "scroll-counter-not-stepped": (
+        "vdc/chip.rs",
+        "self.bg_y_counter = (self.bg_y_counter + 1) & 0x1FF;",
+        "self.bg_y_counter &= 0x1FF;",
+        "the vertical scroll counter does not count the line steps",
+    ),
+    "vds-a-line-short": (
+        "vdc/sequencer.rs",
+        "self.seq.lines_left = self.regs.vds() + 2; // [mfr: VPR \"N-2\"]",
+        "self.seq.lines_left = self.regs.vds() + 1; // [mfr: VPR \"N-2\"]",
+        "the display period starts a line early",
+    ),
+    "front-porch-vcr-plus-two": (
+        "vdc/sequencer.rs",
+        "pub const FRONT_PORCH_EXTRA_LINES: i64 = 3;",
+        "pub const FRONT_PORCH_EXTRA_LINES: i64 = 2;",
+        "the front porch is VCR + 2 lines, not pcetech's VCR + 3",
+    ),
+    "raster-counter-one-at-the-display": (
+        "vdc/sequencer.rs",
+        "self.seq.rcr_count = 0; // [mfr: RCR] 64 on the line before the display period",
+        "self.seq.rcr_count = 1; // [mfr: RCR] 64 on the line before the display period",
+        "the raster counter is $41, not $40, on the line before the display period",
+    ),
+    "burst-from-the-background-bit": (
+        "vdc/sequencer.rs",
+        "let burst = self.regs.cr() & (r::CR_SPRITES | r::CR_BACKGROUND) == 0;",
+        "let burst = self.regs.cr() & r::CR_BACKGROUND == 0;",
+        "burst mode is decided from the background enable alone",
+    ),
+    "cut-display-loses-its-vblank": (
+        "vdc/sequencer.rs",
+        "self.seq.vblank_owed = true; // cut short: the vertical blanking comes on the next line",
+        "self.seq.vblank_owed = false;",
+        "a display period the vertical sync cuts short has no vertical blanking (C27)",
+    ),
+    "sat-transfer-two-lines": (
+        "vdc/dma.rs",
+        "pub const SAT_CLOCKS: i64 = 3 * LINE_CLOCKS;",
+        "pub const SAT_CLOCKS: i64 = 2 * LINE_CLOCKS;",
+        "the SAT transfer is busy two lines, not pcetech's three",
+    ),
+    "dma-cancelled-by-the-display": (
+        "vdc/dma.rs",
+        "if self.dma.running && !self.seq.burst_mode && !self.dma.resume {",
+        "if self.dma.running && !self.seq.burst_mode {",
+        "a VRAM DMA running at the display start is cancelled whatever `dma_resumes` says (C7)",
+    ),
+    "vram-dma-one-dot-a-word": (
+        "vdc/dma.rs",
+        "pub const ACCESS_DOTS: [i64; 4] = [1, 2, 2, 4];",
+        "pub const ACCESS_DOTS: [i64; 4] = [1, 1, 1, 1];",
+        "a VRAM DMA access takes one dot whatever MWR's access width",
+    ),
+    "sprite-fetch-budget-ignored": (
+        "vdc/chip.rs",
+        "let fetched = fetched.min(SPRITE_LIMIT as i64).max(0) as usize;",
+        "let fetched = SPRITE_LIMIT;",
+        "the manual's pattern-fetch budget (2.4.1 (6)) is not applied",
+    ),
+    "sprite-search-budget-ignored": (
+        "vdc/chip.rs",
+        "            searched as usize,",
+        "            64,",
+        "the manual's SAT search budget (2.4.1 (6)) is not applied",
+    ),
+    "mwr-fields-live": (
+        "vdc/chip.rs",
+        "let mwr = self.mwr_cache | (regs.mwr() & 0x80);",
+        "let mwr = regs.mwr();",
+        "the sprite scan reads MWR's SM live, not as the last vertical blanking took it",
+    ),
+    "vwr-write-not-stopped-for-the-wait": (
+        "vdc/chip.rs",
+        "            if self.serve && self.bsy() {\n                // `data_access` would wait: the board serves it first (module notes)\n                self.serve_wanted = true;\n                return;\n            }\n            // a second data access",
+        "            // a second data access",
+        "a VWR write while one is pending does not stop for the board's wait (issue 0004)",
+    ),
     # psg
     "noise-frequency-not-complemented": (
         "psg/chip.rs",
@@ -283,6 +381,12 @@ FAULTS = {
         "            let gain = if source.applies_gain() {\n                1.0\n            } else {\n                source.gain()\n            };",
         "            let gain = source.gain() * if source.applies_gain() { 1.0 } else { 2.0 };",
         "a source that does not apply its own gain gets it doubled",
+    ),
+    "hsync-a-clock-short": (
+        "machine.rs",
+        "pub const HSYNC_CLOCKS: i64 = 237;",
+        "pub const HSYNC_CLOCKS: i64 = 236;",
+        "the VCE's horizontal sync is 236 master clocks, not 237",
     ),
     # machine.rs, sockets.rs, pagetable.rs, hardware_page.rs
     "irq-line-is-a-single-flag": (
@@ -493,6 +597,17 @@ def main() -> int:
     missed = ran = 0
     tree = args.work / "tree"
     target = args.work / "target"
+    # The unfaulted board must pass the first checks, or every fault is "caught" by a case that
+    # cannot run (a missing image fails a case as surely as a difference does).
+    clean = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "lockstep.py"), "--reference-cache", str(args.cache),
+         "--traces", str(args.work / "traces"), "--jobs", str(args.jobs), "--no-narrow", "--quiet",
+         *LOCKSTEP[0][1]],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    if clean.returncode:
+        print(f"the unfaulted board fails {LOCKSTEP[0][0]}; fix that first:\n{clean.stdout[-800:]}")
+        return 2
     for name, (file, old, new, _) in FAULTS.items():
         if args.only and not re.fullmatch(args.only, name):
             continue
@@ -511,6 +626,9 @@ def main() -> int:
         manifest = manifest.replace('lto = "fat"\ncodegen-units = 1\n', "")
         (tree / "Cargo.toml").write_text(manifest)
         shutil.copy(ROOT / "Cargo.lock", tree / "Cargo.lock")
+        # src/lib.rs includes the README as a doctest: without it `cargo test` fails whatever the
+        # fault, and every fault that reached the tests counted as caught (fixed 2026-11-19)
+        shutil.copy(ROOT / "README.md", tree / "README.md")
         source = tree / "src" / file
         text = (ROOT / "src" / file).read_text()
         if text.count(old) != 1:

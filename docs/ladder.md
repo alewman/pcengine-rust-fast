@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # The ladder in detail
 
 > In pcengine-rust-fast: this is pcengine-rust's account, inherited with the fork. The fork runs
@@ -72,9 +73,9 @@ three more devices are defined twice, line for line, in
 The machine rows are crossed (Blazing Lazers on the PC Engine row, where it
 shows its region screen; Gradius and the probe on the TurboGrafx-16 row).
 Each named switch is put away from its default on the probe card and on a
-game: `power_on_seed`, `start_line`, `start_offset`, `vblank_dots` (`None`
-and 0), `vertical_at_line_start` (with both vblank positions),
-`dma_resumes`, `underflow_window_mclk` (0 and 1), `lines_follow_vce_bit2`,
+game: `power_on_seed`, `start_line`, `start_offset`, `vblank_dots` (`None`,
+0 and -18, the best fit to Covell's photographs), `dma_resumes`,
+`underflow_window_mclk` (0, 1 and the withdrawn 15), `lines_follow_vce_bit2`,
 the PSG's thirteen switches one at a time and its `mame` and `mednafen`
 variants.
 
@@ -118,3 +119,13 @@ sample it holds is never 16 whatever the timing (the board's new VDC wait moved 
 timeline, and the held sample had become 16, so `lfo_requires_ch2_on` changed nothing). New unit
 tests in `tests/vdc_wait.rs` and `tests/state.rs`; the new faults are in
 [seeded-faults.md](seeded-faults.md).
+
+## The clean rewrite (2026-11-19)
+
+The ladder was run again against pcengine-python `3318027` (its clean rewrite: a new VDC line
+machine, scroll, DMAs and constants, [restart.md](restart.md)) with huc6280-rust `e1d24a3`, the
+reference cache rebuilt (the old one kept as `external/refcache-v0.2.0`): 275 of 275 identical on
+the first run, 37 of 37 switches and devices change a case, rung 6 18 of 18. The rung 5 cases of
+the withdrawn `vertical_at_line_start` were replaced by `vblank_dots` -18 and the timer window 15.
+The script defaults no longer name the author's paths: `LIB` must be set, `SF2` defaults under
+`$NO_INTRO_DIR`, `COVELL` to `external/covell/` (`fetch_covell.sh`).
