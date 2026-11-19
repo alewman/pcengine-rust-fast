@@ -1,38 +1,3 @@
-//! The HuC6270 VDC as the CPU sees it: the bus port, VRAM access, status, IRQ1 (`vdc/chip.py`).
-//!
-//! Instances, not module state: a SuperGrafx has two, a PC-FX may one day pin this module.
-//!
-//! Bus ($FF:0000-03FF, 4-byte mirror) [hw: pcetech 5]:
-//!
-//! ```text
-//! $0  write: register select (low 5 bits); read: status
-//! $1  unused, reads 0
-//! $2  data LSB     $3  data MSB
-//! ```
-//!
-//! Provisional (U1, tier 5): the VDC's CPU access schedule in active display. Hudson's table and
-//! MacDonald's give the mode-0 slot order (CPU, BAT, CPU, ?, CPU, CG0, CPU, CG1) but not the
-//! phase against the line. A VRAM data access made during the display width is *accepted* at once
-//! and *committed* at the next CPU slot of an 8-dot cycle counted from the display start; BSY
-//! (status bit 6) is set until then; a second data access while one is pending holds the CPU
-//! (RDY) until the first commits. Mednafen instead charges a statistical 1-cycle penalty (C4).
-//!
-//! Differences forced by Rust: the reference's `hold` callable (the board's) is an accumulator
-//! here, `held`, which the board takes when the access returns (`take_hold`): the reference's
-//! board applies its own sum at the same point.
-//!
-//! **The board's wait** (issue 0004): the reference's `serve` callable, which runs the whole
-//! board from inside an access until this chip's pending access is served, cannot be called
-//! here: the board owns this chip and is borrowed for the access (and the device that made it,
-//! the SuperGrafx's VPC, is called again by the board during the wait, to mix a line). `serve`
-//! is a flag instead (wiring, not state: the board sets it on its VDCs). An access that would
-//! wait, with the flag set, stops where the reference's `_data_access` would call `serve`,
-//! having done only what the reference has done by then, and raises `serve_wanted`. The board
-//! then serves the chip (`Board::serve_vram`), holds the CPU for `served - mclk`, and makes the
-//! whole decode again; `sockets::VdcAccess` hands back the results of the VDC accesses made
-//! before the stop, makes the stopped one at `max(served, mclk)`, where nothing is pending and
-//! it runs through as the reference's continues, and makes the later ones as the reference
-//! does after its wait.
 
 use serde::{Deserialize, Serialize};
 
@@ -62,13 +27,6 @@ pub struct Vdc {
     pub now: i64,
     pub seq: Sequencer,
     pub dma: DmaEngine,
-    // [emu: Mednafen BG_YMoo, BG_YOffset, BG_XOffset] the scroll as the line latched it
-    pub(crate) bg_y: i64,
-    pub(crate) need_bg_y_step: bool,
-    pub(crate) bg_y_offset: i64,
-    pub(crate) bg_x_offset: i64,
-    /// MWR as the vertical sync latched it
-    pub(crate) mwr_cache: u16,
     pub(crate) row: Option<Vec<u16>>,
     pub(crate) sprite_entries: Vec<sprites::Entry>,
     /// A pending CPU VRAM write: (address, word)
@@ -124,11 +82,6 @@ impl Vdc {
             now: 0,
             seq: Sequencer::new(vblank_dots, vertical_at_line_start),
             dma: DmaEngine::new(dma_resumes),
-            bg_y: 0,
-            need_bg_y_step: false,
-            bg_y_offset: 0,
-            bg_x_offset: 0,
-            mwr_cache: 0,
             row: None,
             sprite_entries: Vec::new(),
             pending_write: None,
@@ -236,56 +189,6 @@ impl Vdc {
         }
     }
 
-    pub(crate) fn latch_byr(&mut self) {
-        self.step_bg_y();
-        self.bg_y_offset = self.bg_y;
-    }
-
-    pub(crate) fn latch_bxr(&mut self) {
-        self.bg_x_offset = (self.regs.value[r::BXR] & 0x3FF) as i64;
-    }
-
-    fn step_bg_y(&mut self) {
-        if self.need_bg_y_step {
-            self.need_bg_y_step = false;
-            self.bg_y = if self.seq.rcr_count == 0 {
-                (self.regs.value[r::BYR] & 0x1FF) as i64
-            } else {
-                self.bg_y + 1
-            };
-        }
-    }
-
-    pub(crate) fn line_counter_step(&mut self, _count: i64) {
-        self.step_bg_y();
-        self.need_bg_y_step = true;
-    }
-
-    /// The scan for the next line's sprites, with the overflow flag and the narrow-display
-    /// budget (U3: Mesen2's: the VDC fetches 4, 4, 8 or 16 dots per entry between the end of
-    /// one line's display width and 16 dots before the next line's).
-    pub(crate) fn fetch_sprites(&mut self, line: i64) {
-        let seq = &self.seq;
-        let dots = 1365 / seq.divider;
-        let previous_end = py_floordiv(seq.active_end - seq.origin - HSYNC_CLOCKS, seq.divider);
-        let next_start = dots + 8 + (self.regs.hds() + 1) * 8 - 16;
-        let budget = 0.max(next_start - previous_end)
-            / sprites::CLOCKS_PER_SPRITE[((self.mwr_cache >> 2) & 3) as usize];
-        // The fork: into the last line's list (`scan` allocates one).
-        let overflow = sprites::scan_into(
-            &mut self.sprite_entries,
-            &self.vram,
-            VRAM_WORDS,
-            &self.sat,
-            line,
-            self.mwr_cache,
-            budget as usize,
-        );
-        if overflow && self.regs.cr() & r::CR_OVERFLOW_IRQ != 0 {
-            self.status |= r::OR;
-        }
-    }
-
     pub(crate) fn collision_hit(&mut self) {
         if self.regs.cr() & r::CR_COLLISION_IRQ != 0 {
             self.status |= r::CR_FLAG;
@@ -368,14 +271,6 @@ impl Vdc {
         }
     }
 
-    /// Commit a waiting CPU access unless a transfer holds the VRAM (Mednafen's
-    /// `CheckAndCommitPending`: nothing is committed while the SAT or VRAM DMA runs).
-    pub(crate) fn commit_unless_dma(&mut self) {
-        if !self.dma.busy() {
-            self.commit_pending();
-        }
-    }
-
     pub(crate) fn commit_pending(&mut self) {
         if let Some((address, word)) = self.pending_write.take() {
             if (address as usize) < VRAM_WORDS {
@@ -435,61 +330,6 @@ impl Vdc {
             self.schedule_commit(mclk);
         }
         value
-    }
-
-    pub fn write(&mut self, offset: u32, value: u8, mut mclk: i64) {
-        self.catch_up(mclk);
-        let port = offset & 3;
-        if port == 0 {
-            self.regs.select = value & 0x1F;
-            return;
-        }
-        if port == 1 {
-            return;
-        }
-        let register = self.regs.select;
-        if !r::valid_register(register) {
-            return;
-        }
-        let register = register as usize;
-        let msb = port == 3;
-        if register == r::VRW {
-            if !msb {
-                self.regs.write_latch = value;
-            } else {
-                if self.serve && self.bsy() {
-                    self.serve_wanted = true; // `data_access` would wait: the board serves it first
-                    return;
-                }
-                mclk = self.data_access(mclk);
-                let word = self.regs.write_latch as u16 | ((value as u16) << 8);
-                self.pending_write = Some((self.regs.value[r::MAWR], word));
-                self.regs.value[r::MAWR] =
-                    self.regs.value[r::MAWR].wrapping_add(self.regs.increment());
-                self.schedule_commit(mclk);
-            }
-            return;
-        }
-        self.regs.set_byte(register, value, msb);
-        if register == r::MARR && msb && self.serve && self.bsy() {
-            // `data_access` below would wait: the board serves it first (the access is made
-            // again after the wait and stores the same byte again)
-            self.serve_wanted = true;
-            return;
-        }
-        if register == r::MARR && msb {
-            // [hw: pcetech 5.1 $01] writing the MSB loads the read buffer from VRAM[MARR]
-            mclk = self.data_access(mclk);
-            self.pending_read = Some(self.regs.value[r::MARR]);
-            self.schedule_commit(mclk);
-        } else if register == r::BYR {
-            // [emu: Mednafen] set on both bytes: only changing on the MSB breaks a game
-            self.bg_y = (self.regs.value[r::BYR] & 0x1FF) as i64;
-        } else if register == r::SATB {
-            self.dma_arm_satb(); // [mfr] armed by a write; starts when the display period ends
-        } else if register == r::LENR && msb {
-            self.dma_start(mclk);
-        }
     }
 
     // -- VRAM access timing -----------------------------------------------------------------------

@@ -1,28 +1,6 @@
-//! The machine table and the clock constants every module shares
-//! (`machine.py`).
-//!
-//! One board, a table of rows: the PC Engine and the TurboGrafx-16 differ by a
-//! pin (the reference's docs/start-here.md). Add-ons (SuperGrafx, CD) add rows
-//! or build on this board; they do not fork it.
-//!
-//! Differences forced by Rust: time is `i64` master clocks everywhere (the
-//! reference's unbounded `int`; a line's start may be negative with
-//! `start_offset`).
 
 /// [hw: pcetech 2.4] 21.47727 MHz master clock (6 x NTSC colour burst).
 pub const MASTER_HZ: i64 = 21_477_272;
-
-/// [doc: wiki "Timing"; emu: Mednafen vce.cpp] a line is 1365 master clocks whatever the dot clock
-/// (C5: "roughly 342 dots" at 5 MHz is 1365 / 4 = 341.25).
-pub const LINE_CLOCKS: i64 = 1365;
-
-/// [emu: Mednafen vce.cpp l.561 `hblank_counter = hblank ? 237 : 1128`] the VCE's horizontal sync
-/// is 237 master clocks at the start of a line. Tier 5; the real width is not published (U19).
-pub const HSYNC_CLOCKS: i64 = 237;
-
-/// [emu: Mednafen vce.cpp `vblank_counter = vblank ? 4095 : ...`] the vertical sync is the last
-/// three lines of a frame (4095 = 3 x 1365). [hw: pcetech 7] "3 lines for the sync area".
-pub const VSYNC_LINES: i64 = 3;
 
 /// [hw: pcetech 2.4] CPU clock is master/3 (high) or master/12 (low); power-up is low.
 pub const CPU_CLOCKS_HIGH: i64 = 3;

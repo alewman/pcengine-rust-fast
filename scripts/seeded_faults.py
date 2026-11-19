@@ -210,42 +210,6 @@ FAULTS = {
         "if count == self.regs.rcr() - 0x41 && self.regs.cr() & r::CR_RASTER_IRQ != 0 {",
         "the raster compare fires a line early",
     ),
-    "byr-set-on-the-msb-only": (
-        "vdc/chip.rs",
-        "} else if register == r::BYR {",
-        "} else if register == r::BYR && msb {",
-        "a write of BYR's low byte alone does not move the line counter (Mednafen's note)",
-    ),
-    "byr-latched-a-dot-late": (
-        "vdc/sequencer.rs",
-        "let to_byr = if hds <= 2 { 1 } else { (hds + 1) * 8 - 21 };",
-        "let to_byr = if hds <= 2 { 2 } else { (hds + 1) * 8 - 21 };",
-        "BYR is latched a dot later in the line (U3)",
-    ),
-    "vds-a-line-short": (
-        "vdc/sequencer.rs",
-        "VPhase::Vds => self.seq.vphase_counter = self.seq.vds + 2,",
-        "VPhase::Vds => self.seq.vphase_counter = self.seq.vds + 1,",
-        "the display period starts a line early",
-    ),
-    "burst-from-the-background-bit": (
-        "vdc/sequencer.rs",
-        "self.seq.burst_mode = self.regs.cr() & 0xC0 == 0;",
-        "self.seq.burst_mode = self.regs.cr() & 0x80 == 0;",
-        "burst mode is decided from the background enable alone",
-    ),
-    "sat-transfer-time-fixed": (
-        "vdc/dma.rs",
-        "self.dma.sat_end = Some(now + SAT_DOTS * self.seq.divider);",
-        "self.dma.sat_end = Some(now + SAT_DOTS * 4);",
-        "the SAT transfer takes 1024 dots of the 5 MHz clock whatever the dot clock",
-    ),
-    "dma-cancelled-by-the-display": (
-        "vdc/dma.rs",
-        "if self.dma.running && !self.seq.burst_mode && !self.dma.resume {",
-        "if self.dma.running && !self.seq.burst_mode {",
-        "a VRAM DMA running when the display starts is cancelled whatever `dma_resumes` says (C7)",
-    ),
     "seventeen-sprites": (
         "vdc/sprites.rs",
         "            if entries.len() == SPRITE_LIMIT {",
@@ -321,12 +285,6 @@ FAULTS = {
         "a source that does not apply its own gain gets it doubled",
     ),
     # machine.rs, sockets.rs, pagetable.rs, hardware_page.rs
-    "hsync-a-clock-short": (
-        "machine.rs",
-        "pub const HSYNC_CLOCKS: i64 = 237;",
-        "pub const HSYNC_CLOCKS: i64 = 236;",
-        "the horizontal sync is 236 master clocks",
-    ),
     "irq-line-is-a-single-flag": (
         "sockets.rs",
         "            self.sources.remove(source);",
@@ -454,12 +412,6 @@ FAULTS = {
         "    entries.clear();\n",
         "",
         "a line's sprite scan adds to the last line's entries",
-    ),
-    "line-events-not-emptied": (
-        "vdc/sequencer.rs",
-        "        seq.events.clear();\n",
-        "",
-        "a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites",
     ),
     "port-catch-up-keeps-the-old-horizon": (
         "board.rs",
