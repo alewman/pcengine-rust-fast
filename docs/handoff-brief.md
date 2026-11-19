@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Handoff brief: pcengine-rust
 
 > In pcengine-rust-fast: this is the base board's brief, inherited with the fork. The fork's

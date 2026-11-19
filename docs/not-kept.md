@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Tried and not kept
 
 Each with its A/B (scripts/ab.py: two builds alternated on one pinned core, the best of 12 runs a
@@ -29,6 +30,32 @@ below about 3% cannot be told from nothing here.
 - **Thin LTO** in place of fat LTO with one codegen unit: the fat build is x1.107 over it.
 - **One codegen unit without LTO**: the fat LTO build is x1.097 over it. What pays is inlining
   across the crate borders (the CPU core, the 65xx frame under it), not the unit count.
+
+## Lost to the clean rewrite (2026-11-19)
+
+The fork's counterparts of the code pcengine-rust withdrew were moved aside unread before the merge
+of its clean rewrite (docs/restart.md). Two of the fork's changes lived inside that code:
+
+- **The line's event list reused** (six lines of the old `vdc/sequencer.rs`, with the fault
+  `line-events-not-emptied`). Gone with the file. Nothing to re-apply: the new sequencer keeps one
+  sorted event list for its whole life (`schedule` pushes and sorts, `seq_run_to` takes from the
+  front), so no list is made a line.
+- **The sprite list reused from line to line** (the call to `sprites::scan_into` in the old
+  `fetch_sprites`). Written fresh in the new `fetch_sprites` (`scan_into` into
+  `self.sprite_entries`, truncated to the manual's fetch budget there), the gate green, and
+  measured with `scripts/ab.sh` against the merge without it: **x1.024, x1.010 and x0.979** on the
+  default, nf5 and nf6 layouts (R-Type alone went from x1.091 to x0.877 across the layouts, the
+  other titles within 3%). Not a gain on every layout: not kept, and `sprites.rs` is the base
+  board's again (`scan_into` and the fault `sprite-list-not-emptied` are gone with it).
+
+- **The row buffer reused from line to line** (`render_line` took the last line's row back,
+  cleared and resized it). Not withdrawn code, and kept by the merge, but inert after it: the new
+  `line_begins` (pcengine-rust's) drops the row at every line step, so `render_line` found none
+  to reuse and allocated a row a line anyway. The fault on it, `row-buffer-not-cleared`, was
+  missed (the first run on the merged tree) because it could change nothing. The three lines are
+  the base board's `vec![0x100; dots]` again and the fault is gone; drawing into the row in place
+  (`row_into`) and the capture reading it where it lies (`drawn_row`) stay. Keeping the buffer
+  would need a spare row in the VDC beside the state; not attempted.
 
 ## Not attempted, and why
 

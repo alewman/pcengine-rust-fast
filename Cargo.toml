@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 [package]
 name = "pcengine-rust-fast"
 version = "0.2.0"

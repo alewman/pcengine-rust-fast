@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # The board under wasm: build wasm-bench/ for wasm32-unknown-unknown (the rustup 1.93.1
 # toolchain: /usr/bin/cargo has no wasm std), run the five titles under Node, and compare the
 # PSG's level table (the platform's powf) with the native build's.

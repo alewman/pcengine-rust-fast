@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """A/B two builds of pce-bench on this shared machine: alternate them, title by title, on one
 pinned CPU, and compare each side's best run.
 

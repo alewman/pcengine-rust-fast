@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The board behind four plain exports, for timing under wasm (no wasm-bindgen: Node's own
 //! `WebAssembly` runs it) and for the same run natively (`src/main.rs`).
 //!

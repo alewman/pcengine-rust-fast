@@ -1,10 +1,12 @@
+<!-- SPDX-License-Identifier: MIT -->
 # pcengine-rust-fast
 
 A speed fork of [pcengine-rust](https://github.com/alewman/pcengine-rust), the
 Rust **PC Engine / TurboGrafx-16** board (itself transcribed from, and proven
 equivalent to, [pcengine-python](https://github.com/alewman/pcengine-python)
-`v0.2.0`), forked at `49e3d48` and merged with pcengine-rust 0.2.0 at
-`194c120` (rung 7's record; the code at `39b29d1`). It is **held in lockstep with it**: every change must leave this
+`3318027`), forked at `49e3d48`, merged with pcengine-rust 0.2.0 at
+`194c120` and with pcengine-rust's clean rewrite at `26ea621` (2026-11-19,
+[docs/restart.md](docs/restart.md)). It is **held in lockstep with it**: every change must leave this
 board's traces identical to the base board's on every case (and so to the
 reference's), and must measure faster, or it is not kept. Its CPU is
 [huc6280-rust-fast](https://github.com/alewman/huc6280-rust-fast), the speed
@@ -28,25 +30,30 @@ pcengine-rust changes one line, its dependency.
 
 ## Status
 
-**2026-11-13: 0.2.0, pcengine-rust 0.2.0 merged (pcengine-python `v0.2.0`,
-its issue 0004 settled) and the core at huc6280-rust-fast `90711f2`
-(huc6280-python `v0.4.0`); the gate green against the rebuilt reference
-cache.** About **x4.3** over the fork point on the board's own changes and
-**x1.075** more from the CPU core; the merge costs about **x0.954** (under
-"Speed"). Gates, re-run on 2026-11-13 after the merge:
+**2026-11-19: the clean rewrite (unreleased, local).** pcengine-rust `26ea621`
+merged (pcengine-python `3318027`: the VDC's line machine, DMAs and parts of
+the chip rewritten from documents after the licence audit) and the core at
+huc6280-rust-fast `73f0829` (huc6280-python `6ce348e`), by path from a sibling
+clone until both are pushed (CI fails until then). The fork's counterparts of
+the withdrawn code were moved aside unread first; every speed change outside
+that code is kept, the two inside it are lost ([docs/not-kept.md](docs/not-kept.md)).
+**x4.6 over pcengine-rust** on the five titles (x4.624, x4.596 and x4.728 on
+three code layouts), and level with the 0.2.0 release (x0.988, x1.034,
+x1.028): under "Speed". Gates, run on 2026-11-19 after the merge:
 
 | Gate | What | Result |
 | --- | --- | --- |
-| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals (a 0.1.0 state among them), the VDC wait (`tests/vdc_wait.rs`), `tests/fork.rs`'s invariants, the README's example | 63 pass |
-| Lockstep | every case of `scripts/cases.tsv` against the reference's traces (`external/refcache`): Covell's test, the probe card, the 18 picture-gate titles, the five PSG games, the whole library of 179 HuCards and the Street Fighter II' card, every socket, machine row and switch | 275 of 275 identical |
-| Save states | the round trip and the run-ahead pass on the 18 picture-gate titles | 18 of 18 |
-| Seeded faults | pcengine-rust's 56 and twenty on this fork's shortcuts | 76 caught, 0 missed |
+| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals (a 0.2.0 state among them), the VDC wait (`tests/vdc_wait.rs`), `tests/fork.rs`'s invariants, the README's example | 68 pass |
+| Lockstep | every case of `scripts/cases.tsv` against the reference's traces (`external/refcache`, rebuilt by pcengine-rust from `3318027`): Covell's test, the probe card, the 18 picture-gate titles, the five PSG games, the whole library of 179 HuCards and the Street Fighter II' card, every socket, machine row and switch | 275 of 275 identical, on the first run |
+| Save states (format version 3) | the round trip and the run-ahead pass on the 18 picture-gate titles | 18 of 18 |
+| Seeded faults | pcengine-rust's 66 and seventeen on this fork's shortcuts | 80 caught, 3 missed (the board's wait, as on pcengine-rust) |
+| clippy `-D warnings` (rustc 1.93.1 and stable 1.99.1), fmt, wasm32 build | | pass |
 
 pcengine-rust's ladder, which this gate runs from the same cases and the
 same reference cache, is in its README (its
 [Status](https://github.com/alewman/pcengine-rust#status) and
 [How it is proven](https://github.com/alewman/pcengine-rust#how-it-is-proven));
-the reference's traces are pcengine-python `v0.2.0`'s on all 275 cases, 84,200
+the reference's traces are pcengine-python `3318027`'s on all 275 cases, 84,200
 frames. **Nothing here was run on a real console**: the board is proven equal
 to pcengine-python, and how close that is to the hardware is the reference's
 record.
@@ -117,8 +124,9 @@ are the guide.
 
 Nothing, if it uses `System` (`board_mut()`, `step()`, `run_frame()`,
 `run_until()`) and `BoardOptions`, as the add-on crates and the pages do. The
-fork adds three public functions and changes none: `Board::touch`,
-`vdc::background::row_into`, `vdc::sprites::scan_into`.
+fork adds two public functions and changes none: `Board::touch` and
+`vdc::background::row_into` (`vdc::sprites::scan_into`, a third until
+2026-11-19, is gone: docs/not-kept.md).
 
 - **`Board::touch()`** tells the board it was reached from outside a bus
   access, so it forgets the event horizon and decides its shortcuts again.
@@ -136,7 +144,8 @@ fork adds three public functions and changes none: `Board::touch`,
   runs with them on.
 - **Save states** are the base board's, byte for byte, for the same run (the
   bench's checksum covers the snapshot); the format and the refusals are
-  unchanged. The PSG's level curve is a written-out table of doubles
+  the base board's (format version 3 since the clean rewrite: a state saved
+  by 0.2.0 or earlier is refused, not converted). The PSG's level curve is a written-out table of doubles
   (`LEVEL_BITS`, from pcengine-rust), so a state saved in a browser has a
   native build's bytes.
 
@@ -147,6 +156,31 @@ Measured on an Intel i9-13900K (32 threads, shared with other work), rustc
 alternated title by title on one pinned efficiency core, each side's best of
 12 runs, the checksums of every picture, every sample and the final snapshot
 equal on both sides (`scripts/ab.py`).
+
+**The clean rewrite (2026-11-19): x4.6 over pcengine-rust, level with 0.2.0.**
+`scripts/ab.sh` (each side built under three code layouts, `ab.py` on each,
+best of 8 runs a side, one pinned efficiency core, load average about 20 from
+other work and this pass's seeded faults). Against pcengine-rust `26ea621`
+with this fork's `pce-bench` dropped in and the same release profile (the
+checksums, final snapshot included, equal on both sides):
+
+| Title (600 frames) | default | nf5 | nf6 |
+| --- | ---: | ---: | ---: |
+| Blazing Lazers | x4.692 | x4.658 | x4.922 |
+| Bonk's Adventure | x4.648 | x4.774 | x5.110 |
+| R-Type | x4.638 | x4.943 | x4.867 |
+| After Burner II | x4.675 | x4.480 | x4.368 |
+| Street Fighter II' | x4.470 | x4.166 | x4.420 |
+| all five (geometric mean) | **x4.624** | **x4.596** | **x4.728** |
+
+(pcengine-rust ran 195 to 239 frames a second, this fork 872 to 1108.)
+Against the 0.2.0 release (`0364837`, `--behaviour-changed`: the state
+format and the picture changed, each build agrees with itself): **x0.988,
+x1.034, x1.028** on the three layouts, titles from x0.951 to x1.095: no change
+the measurement can tell from its noise. Under wasm (`scripts/wasm-bench.sh`,
+Node 22, best of 5): 504 to 655 frames a second on the five titles, 8.4 to
+10.9 times real time, with the snapshot's bytes equal to the native build's
+(not an A/B: the 2026-11-12 figures below were taken on a quieter machine).
 
 **The board's own changes (2026-11-12): x4.349 natively, x4.04 under wasm**
 over the fork point, measured directly, both on huc6280-rust. Frames per
@@ -225,7 +259,7 @@ measured directly.
 | **This crate's own cards finish like work RAM**: `RomCard`, `Sf2Card`, `PopulousCard` and `TennokoeCard` use nothing of their pins, so no stretch, hold, line or horizon can follow an access to one | x1.479 |
 | **A captured row with no palette write inside it** is looked up in one pass, with no dot times | x1.052 |
 | **A tile line's eight pixels from a bitplane table** (four lookups ORed), drawn straight into the row | x1.038 |
-| **The line path without copies**: with the default pixel path the capture reads the VDC's row where it lies; the row, the sprite list and the event list reuse their buffers | x1.031 |
+| **The line path without copies**: with the default pixel path the capture reads the VDC's row where it lies; the row, the sprite list and the event list reuse their buffers (since the clean rewrite only the reading in place and the drawing into the row remain: docs/not-kept.md) | x1.031 |
 | **With a port device, only its `catch_up` before the horizon** (it is promised one every cycle), not the whole of `run_to` | x1.183 with a port device |
 | **The bus callbacks' quiet case keeps no register across a call**; the taps, the events and the full access are out of line | x1.132 |
 | **A `RomCard`'s image on loan to the board while it runs**: the ROM read inline, not through the card's trait with a `BoardPins` built for it | x1.066 |
@@ -309,11 +343,12 @@ speed, a copy of the VDC and of the timer caught up to the clock equals the
 original; and cycle by cycle with a port device that starts a DMA from its
 `catch_up`.
 
-**Seeded faults** (`scripts/seeded_faults.py`, rung 7): pcengine-rust's 56,
-each caught by the same check as there, and twenty on this fork's shortcuts (at
-least one on every kept change that has code): 76 caught, 0 missed, on
-2026-11-13 after the merge of pcengine-rust 0.2.0. The table
-is in [docs/seeded-faults.md](docs/seeded-faults.md).
+**Seeded faults** (`scripts/seeded_faults.py`, rung 7): pcengine-rust's 66
+and seventeen on this fork's shortcuts (at least one on every kept change that
+has code): **80 caught, 3 missed** (the three on the board's wait that pcengine-rust misses too) on 2026-11-19 after the clean rewrite. The table is
+in [docs/seeded-faults.md](docs/seeded-faults.md); the 0.2.0 count (76
+caught) was overstated, as pcengine-rust's was: the seeder copied no README
+into its tree, so `cargo test` failed there whatever the fault.
 
 **Measuring** on a shared machine: `pce-bench` times `run_frame` and
 `take_audio` by the thread's own CPU time (`/proc/thread-self/schedstat`),
@@ -391,9 +426,13 @@ repositories, pcengine-python and (through the CPU core) huc6280-python,
 whose trees are checked for copied or transcribed emulator code by
 pcengine-python's `scripts/provenance_check.py`
 ([docs/provenance.md](https://github.com/alewman/pcengine-python/blob/main/docs/provenance.md));
-this fork's changes are restructurings of pcengine-rust's own code. One small
-table has a permissively licensed origin, as in the reference: see
-[NOTICE.md](NOTICE.md).
+this fork's changes are restructurings of pcengine-rust's own code. Since the
+clean rewrite of 2026-11-19 ([docs/restart.md](docs/restart.md),
+[docs/provenance.md](docs/provenance.md)) the code that followed GPL sources
+in the reference, and its counterpart here with the fork's changes inside it,
+has been withdrawn unread and replaced by pcengine-rust's transcription of the
+reference's replacement. MAME's BSD-3-Clause sources the reference read as
+descriptions, and one small table, are acknowledged in [NOTICE.md](NOTICE.md).
 
 [docs/fast-brief.md](docs/fast-brief.md) is the brief this fork was built
 from, with what was built appended; [docs/handoff-brief.md](docs/handoff-brief.md)

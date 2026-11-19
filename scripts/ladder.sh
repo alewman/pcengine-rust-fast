@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # The fork's gate: every change must leave this board identical to pcengine-rust.
 # cargo test, every lockstep case against the reference traces (external/refcache:
-# pcengine-rust's, which are pcengine-python's at v0.2.0 on all 275 cases), then the save-state
+# pcengine-rust's, which are pcengine-python's at 3318027 on all 275 cases), then the save-state
 # round trip and the run-ahead pass on the 18 picture-gate titles (rung 6). `--faults` adds the
-# seeded faults (rung 7, several minutes). At most 12 processes, niced.
+# seeded faults (rung 7, several minutes). At most 8 processes, niced.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-JOBS=${JOBS:-12}
+JOBS=${JOBS:-8}
 nice cargo build --release -q --manifest-path "$ROOT/Cargo.toml"
 if ! TESTS=$(nice cargo test --release -q --manifest-path "$ROOT/Cargo.toml" 2>&1); then
     printf '%s\n' "$TESTS" | tail -30

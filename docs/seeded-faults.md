@@ -1,6 +1,20 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Seeded faults (rung 7)
 
+**This fork, 2026-11-19 (the clean rewrite merged, against pcengine-python `3318027`'s rebuilt
+reference cache): 80 caught, 3 missed** of 83: pcengine-rust's 66 (its table below), each caught
+by the same check as on pcengine-rust, its three misses included (the board's wait, below), and
+this fork's seventeen ("This fork's shortcuts", at the end). Log: `external/faults-2026-11-19.log`
+(not committed). The run was made on the tree before the inert row-buffer reuse was taken out
+(docs/not-kept.md); its fault `row-buffer-not-cleared` was the fourth miss, an equivalent fault,
+and is gone with the three lines; the other 83 are unaffected by that change, which leaves every
+bus cycle, pixel and allocation as it was (the gate was re-run on it). The seeder now copies the
+tree with fresh file times (with copytree's `copy2`, a file restored after a fault kept its old
+time and cargo could keep the faulted build of it); a first run without that fix was stopped and
+discarded.
+
+pcengine-rust's record follows.
+
 A gate that cannot fail proves nothing. This is the record of the run on 2026-11-19 (the clean
 rewrite, against pcengine-python `3318027`'s rebuilt reference cache): the 49 faults of 0.2.0 that
 did not hold withdrawn code (seven did, and were cut unread with it: docs/restart.md) and seventeen
@@ -165,7 +179,15 @@ below, **76 caught, 0 missed**. The new eight are caught by the same checks as o
 hold directly, not through `Board::hold`, which also calls `touch`). Every fault of the 0.1.0 run is
 caught by the same check as then.
 
-## This fork's twenty
+## This fork's shortcuts (seventeen since 2026-11-19)
+
+2026-11-19: all seventeen caught. Three of the twenty went with the clean rewrite:
+`line-events-not-emptied` (its text was in the withdrawn sequencer; cut unread),
+`sprite-list-not-emptied` (`scan_into` not kept) and `row-buffer-not-cleared` (the reuse inert
+after the merge, taken out); docs/not-kept.md. Two are now caught earlier than before:
+`next-event-forgets-the-commit` by rung 5 (`sock-path-rtype`) and `full-read-skips-the-events`
+by rung 2 (`covell`). The text below is the 2026-11-12 record.
+
 
 pcengine-rust-fast keeps the 48 above, each still caught by the same check, and adds at least
 one fault on every kept change that has code: **68 caught, 0 missed** (2026-11-12, and re-run
@@ -186,9 +208,6 @@ test program now runs at high CPU speed. The faults are built without LTO (the s
 | `tile-line-mirrored` | `vdc/background.rs` | the bitplane table puts a tile line's pixels in the other order | rung 2 (`covell`) |
 | `background-fine-scroll-dropped` | `vdc/background.rs` | the first tile of a background row is drawn from its left edge whatever BXR's low bits | rung 2 (`base-probe`) |
 | `any-path-is-direct` | `board.rs` | the capture reads the first VDC's row whatever pixel path is plugged in | rung 5 (`sock-path-rtype`) |
-| `row-buffer-not-cleared` | `vdc/chip.rs` | a line's row starts as the last line's pixels, not as overscan | rung 2 (`covell`) |
-| `sprite-list-not-emptied` | `vdc/sprites.rs` | a line's sprite scan adds to the last line's entries | rung 2 (`base-probe`) |
-| `line-events-not-emptied` | `vdc/sequencer.rs` | a line's events are added to the last line's stale ones, which Mednafen's HPhase overwrites | rung 4 (`lib-Great Fumo Binning, The (World) (Aftermarket) (Unl)`) |
 | `port-catch-up-keeps-the-old-horizon` | `board.rs` | what a port device's `catch_up` does to a VDC is not in the event horizon | `cargo test` (`a_port_device_that_reaches_a_vdc_from_catch_up_moves_the_horizon`) |
 | `quiet-idle-cycle-not-tapped` | `board.rs` | an idle cycle before the event horizon is left out of the bus log | rung 2 (`covell`) |
 | `full-read-skips-the-events` | `board.rs` | a read cycle that reaches the event horizon does not run the events | rung 2 (`base-probe`) |

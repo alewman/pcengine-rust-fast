@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The native side of the wasm comparison.
 //!
 //!     pce-wasm-bench                         # the 128 level-table entries as hex bits

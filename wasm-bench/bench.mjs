@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // The wasm board under Node: frames per second by the process's CPU time, best of ROUNDS.
 //   node bench.mjs BOARD.wasm IMAGE.pce [tg16] [--frames N] [--rounds N]
 //   node bench.mjs BOARD.wasm --levels        # the PSG level table's 128 entries as hex bits

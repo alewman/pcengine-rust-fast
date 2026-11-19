@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! The speed fork's own shortcuts (not in the reference or the base board): the event horizon
 //! may skip `run_to` only where it would have found nothing to do, so the board's state after
 //! every instruction is the state the base board's eager catch-up leaves.

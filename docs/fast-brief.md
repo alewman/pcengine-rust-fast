@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Brief: pcengine-rust-fast
 
 > **This is the brief the fork was built from (2026-11-12), kept as written**, with "What was
