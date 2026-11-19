@@ -511,12 +511,6 @@ FAULTS = {
         "        row.resize(dots, 0x100u16);",
         "a line's row starts as the last line's pixels, not as overscan",
     ),
-    "sprite-list-not-emptied": (
-        "vdc/sprites.rs",
-        "    entries.clear();\n",
-        "",
-        "a line's sprite scan adds to the last line's entries",
-    ),
     "port-catch-up-keeps-the-old-horizon": (
         "board.rs",
         "        self.deliver_lines(pins, false);\n        self.look_ahead();\n",
@@ -608,10 +602,9 @@ def main() -> int:
     if clean.returncode:
         print(f"the unfaulted board fails {LOCKSTEP[0][0]}; fix that first:\n{clean.stdout[-800:]}")
         return 2
-    for name, (file, old, new, _) in FAULTS.items():
-        if args.only and not re.fullmatch(args.only, name):
-            continue
-        ran += 1
+    cargo = ["nice", "cargo", "--quiet", "--manifest-path", str(tree / "Cargo.toml")]
+
+    def prepare_tree() -> None:
         for part in ("src", "tests"):
             if (tree / part).exists():
                 shutil.rmtree(tree / part)
@@ -629,13 +622,29 @@ def main() -> int:
         # src/lib.rs includes the README as a doctest: without it `cargo test` fails whatever the
         # fault, and every fault that reached the tests counted as caught (fixed 2026-11-19)
         shutil.copy(ROOT / "README.md", tree / "README.md")
+
+    # ... and the unfaulted tree must pass its own `cargo test`, or the tests stage "catches"
+    # every fault that reaches it (pcengine-rust 0.2.0's count was wrong that way).
+    tree.mkdir(parents=True, exist_ok=True)
+    prepare_tree()
+    clean_tests = subprocess.run(
+        [*cargo[:2], "test", "--release", *cargo[2:], "--target-dir", str(target)],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    if clean_tests.returncode:
+        print(f"the unfaulted tree fails cargo test; fix that first:\n{clean_tests.stdout[-800:]}")
+        return 2
+    for name, (file, old, new, _) in FAULTS.items():
+        if args.only and not re.fullmatch(args.only, name):
+            continue
+        ran += 1
+        prepare_tree()
         source = tree / "src" / file
         text = (ROOT / "src" / file).read_text()
         if text.count(old) != 1:
             print(f"{name}: the fault's text is in {file} {text.count(old)} times, not once")
             return 2
         source.write_text(text.replace(old, new))
-        cargo = ["nice", "cargo", "--quiet", "--manifest-path", str(tree / "Cargo.toml")]
         build = subprocess.run(
             [*cargo[:2], "build", "--release", *cargo[2:], "--target-dir", str(target)],
             capture_output=True, text=True,

@@ -54,23 +54,6 @@ pub fn scan(
     searched: usize,
 ) -> (Vec<Entry>, bool) {
     let mut entries: Vec<Entry> = Vec::new();
-    let overflow = scan_into(&mut entries, vram, size, sat, line, mwr, limit, searched);
-    (entries, overflow)
-}
-
-/// `scan` into a list the caller keeps (emptied first); returns the overflow.
-#[allow(clippy::too_many_arguments)] // `scan`'s seven and the list
-pub fn scan_into(
-    entries: &mut Vec<Entry>,
-    vram: &[u16],
-    size: usize,
-    sat: &[u16],
-    line: i64,
-    mwr: u16,
-    limit: usize,
-    searched: usize,
-) -> bool {
-    entries.clear();
     let cg_two_planes = ((mwr >> 2) & 3) == 1;
     for i in 0..searched.min(64) {
         let (w0, w1, w2, w3) = (sat[4 * i], sat[4 * i + 1], sat[4 * i + 2], sat[4 * i + 3]);
@@ -97,7 +80,7 @@ pub fn scan_into(
             if entries.len() == SPRITE_LIMIT {
                 // [mfr] "17 or more": the rest of the scan is dropped
                 entries.truncate(limit);
-                return true;
+                return (entries, true);
             }
             let cell = pattern | if wide { half ^ hflip as u32 } else { 0 };
             let address = (cell * 64 + (row & 15)) as usize;
@@ -126,7 +109,7 @@ pub fn scan_into(
         }
     }
     entries.truncate(limit);
-    false
+    (entries, false)
 }
 
 /// Draw the entries over `row` (the line's 9-bit pixels; the display starts at index `first`).
