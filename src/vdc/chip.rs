@@ -327,10 +327,7 @@ impl Vdc {
     pub(crate) fn render_line(&mut self) {
         let seq = &self.seq;
         let dots = (1365 / seq.divider) as usize;
-        // The fork: the last line's buffer again (the base board allocates a row a line).
-        let mut row = self.row.take().unwrap_or_default();
-        row.clear();
-        row.resize(dots, 0x100u16);
+        let mut row = vec![0x100u16; dots];
         if !seq.display_line {
             self.row = Some(row);
             return;

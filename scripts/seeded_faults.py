@@ -505,12 +505,6 @@ FAULTS = {
         "self.direct_path = true;",
         "the capture reads the first VDC's row whatever pixel path is plugged in",
     ),
-    "row-buffer-not-cleared": (
-        "vdc/chip.rs",
-        "        row.clear();\n        row.resize(dots, 0x100u16);",
-        "        row.resize(dots, 0x100u16);",
-        "a line's row starts as the last line's pixels, not as overscan",
-    ),
     "port-catch-up-keeps-the-old-horizon": (
         "board.rs",
         "        self.deliver_lines(pins, false);\n        self.look_ahead();\n",
@@ -608,7 +602,9 @@ def main() -> int:
         for part in ("src", "tests"):
             if (tree / part).exists():
                 shutil.rmtree(tree / part)
-            shutil.copytree(ROOT / part, tree / part)
+            # fresh times (shutil.copy, not copytree's copy2): a file restored after a fault keeps
+            # its old mtime under copy2, and cargo then keeps the faulted build of it
+            shutil.copytree(ROOT / part, tree / part, copy_function=shutil.copy)
         # a sibling dependency by relative path (while working) resolves from this checkout
         manifest = re.sub(
             r'path = "(\.\./[^"]+)"',
