@@ -5,6 +5,33 @@ Not on crates.io; pin a commit (README).
 
 ## Unreleased
 
+### The early display start (pcengine-rust `37f17ba`, pcengine-python `03ac699`)
+
+- **Merged pcengine-rust `37f17ba`** (local, not pushed yet): `render_line` crops a display that
+  starts before the row (a small HDS puts the display start inside the sync, so `first` is
+  negative). The fork panicked there on `first as usize`. The merge conflicted in `render_line`,
+  because the fork draws into the row in place (`background::row_into`); the fix was transcribed
+  into that shape: with no pad (every case so far) the row is drawn in place as before; with a
+  pad, the line goes into a work row of `dots + pad` that is drawn in place the same way, the
+  sprites draw into it, and the pad is split off, so the row keeps 1365 / divider dots. The base
+  board's unit test `a_display_that_starts_before_the_row_is_cropped_and_the_row_keeps_its_length`
+  came with the merge and passes.
+- The gate's reference is pcengine-python `03ac699` (`scripts/fetch_pcenginepython.sh`, now with
+  `--force-reinstall`); the reference cache key includes the reference's commit
+  (`scripts/lockstep.py`, `cache_name(case, reference=None)`). The cache was rebuilt from scratch
+  in this fork with the reference checked out under `external/pcengine-python`; the `3318027`
+  cache was moved aside to `external/refcache-3318027`. The 275 rebuilt traces are byte-identical
+  to pcengine-rust's `03ac699` cache.
+- The seeder's fresh-mtime copy and the README text: the fork had both already (`8de227a`,
+  `7c53f35`); the fork's versions were kept.
+- **Gate** (2026-11-19, `LIB` set to the 179-card library): `cargo test` 69; lockstep **275 of
+  275 identical**; save states and run-ahead 18 of 18; seeded faults **80 caught, 3 missed** (the
+  same count as before); clippy `-D warnings` (debug and release) on rustc 1.93.1 and stable
+  1.99.1, each with its own target directory and the rustup toolchain first on `PATH`; fmt;
+  wasm32 build. Speed against `7c53f35`: see the README's "Speed".
+
+### The clean rewrite (pcengine-rust `26ea621`)
+
 The clean rewrite of 2026-11-19 ([docs/restart.md](docs/restart.md)): merges pcengine-rust
 `26ea621` (pcengine-python `3318027`, local, not pushed yet) and moves the core to
 huc6280-rust-fast `73f0829` (huc6280-rust `e1d24a3`, huc6280-python `6ce348e`; also local). The

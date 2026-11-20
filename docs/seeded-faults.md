@@ -1,6 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Seeded faults (rung 7)
 
+**Rerun 2026-11-19 after merging pcengine-rust `37f17ba`** (the early display start crop, against
+pcengine-python `03ac699`'s cache, rebuilt here): **80 caught, 3 missed**, the same count as the
+run below. Log: `external/gate-2026-11-19-03ac699.log` (not committed; the ladder keeps only the
+last lines, so the caught and missed lists were not compared name by name).
+
 **This fork, 2026-11-19 (the clean rewrite merged, against pcengine-python `3318027`'s rebuilt
 reference cache): 80 caught, 3 missed** of 83: pcengine-rust's 66 (its table below), each caught
 by the same check as on pcengine-rust, its three misses included (the board's wait, below), and

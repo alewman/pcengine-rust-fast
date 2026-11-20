@@ -327,7 +327,7 @@ impl Vdc {
     pub(crate) fn render_line(&mut self) {
         let seq = &self.seq;
         let dots = (1365 / seq.divider) as usize;
-        let mut row = vec![0x100u16; dots];
+        let row = vec![0x100u16; dots];
         if !seq.display_line {
             self.row = Some(row);
             return;
@@ -337,19 +337,31 @@ impl Vdc {
         let width = py_floordiv(seq.active_end - seq.active_start, seq.divider);
         let cr = seq.cr_cache;
         let divider = seq.divider;
-        let end = (first + width).min(dots as i64);
-        if first >= end {
-            // first <= dots: a display start past the row's end is never scheduled (the next line
-            // step restarts the horizontal periods first: vdc/sequencer.rs). An empty width
-            // draws nothing, as the reference's empty slices do; kept so the slices below cannot
-            // panic.
+        // first <= dots: a display start past the row's end is never scheduled (the next line
+        // step restarts the horizontal periods first: vdc/sequencer.rs). first < 0: the display
+        // started before the row (a small HDS puts it inside the sync); its columns before the
+        // row are drawn into a pad and dropped, so the sprite engine still sees every display
+        // column (collision included) and the row keeps its length. [choice: the row is what the
+        // VCE shows; HYPOTHESIS that the early columns are fetched and lost, not delayed]
+        let pad = if first < 0 { -first } else { 0 };
+        let start = first + pad;
+        let end = (start + width).min(dots as i64 + pad);
+        if start >= end {
+            // An empty width draws nothing, as the reference's empty slices do; kept so the
+            // slices below cannot panic.
             self.row = Some(row);
             return;
         }
-        let (first_index, end_index) = (first as usize, end as usize);
         // The fork: drawn into the row itself (the base board draws the whole width apart and
-        // copies what fits).
-        let shown = &mut row[first_index..end_index];
+        // copies what fits). With a pad (rare) the row is reallocated as the padded work row.
+        let pad_len = pad as usize;
+        let mut work = if pad_len > 0 {
+            vec![0x100u16; dots + pad_len]
+        } else {
+            row
+        };
+        let (start_index, end_index) = (start as usize, end as usize);
+        let shown = &mut work[start_index..end_index];
         if cr & 0x80 != 0 {
             background::row_into(
                 &self.vram,
@@ -365,15 +377,21 @@ impl Vdc {
             // both layers are off (Space Harrier's last 12 lines); pcetech 5.2 says overscan: C30]
             shown.fill(0x000);
         }
-        let mut collision = None;
+        let mut hit = None;
         if cr & 0x40 != 0 && !self.sprite_entries.is_empty() {
-            let hit = sprites::draw(&self.sprite_entries, end - first, &mut row, first_index);
-            if let Some(hit) = hit {
-                if self.regs.cr() & r::CR_COLLISION_IRQ != 0 {
-                    // U3/U26, a choice: the flag rises when the beam reaches the pixel (the
-                    // emulators observed differ: some raise it as the line is drawn)
-                    collision = Some(row_start + (first + hit) * divider);
-                }
+            hit = sprites::draw(&self.sprite_entries, end - start, &mut work, start_index);
+        }
+        let row = if pad_len > 0 {
+            work.split_off(pad_len)
+        } else {
+            work
+        };
+        let mut collision = None;
+        if let Some(hit) = hit {
+            if self.regs.cr() & r::CR_COLLISION_IRQ != 0 {
+                // U3/U26, a choice: the flag rises when the beam reaches the pixel (the emulators
+                // observed differ: some raise it as the line is drawn)
+                collision = Some(row_start + (first + hit) * divider);
             }
         }
         self.row = Some(row);
@@ -615,5 +633,32 @@ impl Vdc {
             Some(row) if row.len() == dots => row.clone(),
             _ => vec![0x100; dots],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The reference's `tests/test_vdc_timing.py`
+    /// `test_a_display_that_starts_before_the_row_is_cropped_and_the_row_keeps_its_length`: a
+    /// small HDS can put the display start inside the sync, before the row's first dot
+    /// (supergrafx-rust found it on the SuperGrafx probe card in compat mode, 2026-11-19: the
+    /// reference's row grew to 682 dots, and this crate panicked). The early columns are dropped.
+    #[test]
+    fn a_display_that_starts_before_the_row_is_cropped_and_the_row_keeps_its_length() {
+        let mut vdc = Vdc::new(None, Some(-16), true);
+        let seq = &mut vdc.seq;
+        seq.divider = 4;
+        seq.origin = 0;
+        seq.display_line = true;
+        seq.cr_cache = 0; // neither layer: the backdrop fills the display width
+        seq.active_start = HSYNC_CLOCKS - 14 * 4;
+        seq.active_end = seq.active_start + 256 * 4;
+        vdc.render_line();
+        let row = vdc.row.as_ref().unwrap();
+        assert_eq!(row.len(), 1365 / 4);
+        assert!(row[0] == 0x000 && row[241] == 0x000); // display columns 14..255
+        assert_eq!(row[242], 0x100); // overscan after the display
     }
 }

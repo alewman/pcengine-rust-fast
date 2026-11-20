@@ -15,7 +15,8 @@ which of picture, audio and CPU state differs).
 
 The reference is slow (several seconds per emulated second), and its trace of a case never
 changes while the pin does not: ``--reference-cache external/refcache`` keeps each one, named by
-the case and a hash of its frames, image name and arguments, so a rerun costs the Rust side only.
+the case and a hash of its frames, image name, arguments and the reference's commit, so a rerun
+costs the Rust side only and a repin starts afresh.
 
 An image in a ``.7z`` or ``.zip`` is extracted (``7z e -so``) into ``scratch/`` for the case and
 removed afterwards; the library is only read. ``$LIB`` and the other case variables come from
@@ -66,10 +67,23 @@ def safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)
 
 
-def cache_name(case: Case) -> str:
+def reference_commit() -> str:
+    """The reference checkout's commit, part of every cache key: a repin starts a fresh cache
+    instead of comparing against traces of the old pin (added 2026-11-19)."""
+    head = subprocess.run(["git", "-C", str(ROOT / "external" / "pcengine-python"), "rev-parse", "HEAD"],
+                          capture_output=True, text=True)  # fmt: skip
+    return head.stdout.strip() if head.returncode == 0 else "unknown"
+
+
+REFERENCE_COMMIT = reference_commit()
+
+
+def cache_name(case: Case, reference: str | None = None) -> str:
+    """``reference``: what the reference is (default this gate's reference commit); a gate that
+    imports this one (supergrafx-rust) passes its own reference's commits."""
     name, frames, image, args = case
     path = Path(image)
-    what: tuple = (frames, path.name, args)
+    what: tuple = (frames, path.name, args, REFERENCE_COMMIT if reference is None else reference)
     if path.suffix.lower() not in (".7z", ".zip") and path.is_file():
         # a loose image (Covell's test, the probe card this repository builds): by content
         what += (hashlib.sha1(path.read_bytes()).hexdigest(),)

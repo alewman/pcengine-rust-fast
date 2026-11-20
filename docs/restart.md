@@ -80,6 +80,34 @@ pass against `3318027`.
 | supergrafx-rust `4fa5aad` (on pcengine-rust `26ea621`) on this crate, dependency line changed in a scratch copy | | builds, 55 tests pass |
 | Speed (`scripts/ab.sh`, three layouts) | x4.7 over the fork point, chained | x4.624 / x4.596 / x4.728 over pcengine-rust `26ea621`; x0.988 / x1.034 / x1.028 against 0.2.0 |
 
+## Follow-up: the early display start (pcengine-rust `37f17ba`, 2026-11-19)
+
+pcengine-python `03ac699` crops a display that starts before the row instead of growing the row,
+and pcengine-rust carried it in `37f17ba` (found by supergrafx-rust's probe card; this fork
+panicked on `first as usize` there too). Merged here by `git merge`; no withdrawn code was
+involved. `render_line` conflicted because the fork draws into the row in place, so the fix was
+transcribed into the fork's shape (CHANGELOG). The other conflicts (the seeder's fresh times,
+seeded-faults.md, README, CHANGELOG) were the fork's own versions of the same changes, kept.
+
+The reference moved to `03ac699`: the cache was rebuilt in this fork from a fresh checkout under
+`external/pcengine-python` (the `3318027` cache is in `external/refcache-3318027`) and came out
+byte-identical, all 275 traces, to pcengine-rust's `03ac699` cache. No case in the gate reaches
+an early display start, so the traces are the same as `3318027`'s; the unit test is what covers
+the new path. Two tooling holes turned up while rebuilding it, both in inherited scripts and left
+as they are: `fetch_pcenginepython.sh` with `CORE_SOURCE` installs the core `--no-deps`, so the
+venv lacks the core's own dependency, 6502-python (`sixfiveohtwo`); it was installed by hand at
+the revision huc6280-python pins (`2146eba`). And `scripts/ab.py` takes `LIB` from
+`make_cases.DEFAULTS` without the environment, so it only works on the five titles already
+extracted into `scratch/bench/`.
+
+| Check | Before (`7c53f35`, against `3318027`) | After (against `03ac699`) |
+| --- | --- | --- |
+| `cargo test` | 68 pass | 69 pass (the crop's unit test) |
+| Lockstep, all cases | 275 of 275 | 275 of 275 |
+| Save states, run-ahead | 18 of 18 | 18 of 18 |
+| Seeded faults | 80 caught, 3 missed | 80 caught, 3 missed |
+| clippy `-D warnings` (1.93.1, stable 1.99.1), fmt, wasm32 | pass | pass |
+
 ## What stays open
 
 Everything pcengine-python's restart.md lists as open about the hardware (the raster compare's

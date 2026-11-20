@@ -4,9 +4,10 @@
 A speed fork of [pcengine-rust](https://github.com/alewman/pcengine-rust), the
 Rust **PC Engine / TurboGrafx-16** board (itself transcribed from, and proven
 equivalent to, [pcengine-python](https://github.com/alewman/pcengine-python)
-`3318027`), forked at `49e3d48`, merged with pcengine-rust 0.2.0 at
-`194c120` and with pcengine-rust's clean rewrite at `26ea621` (2026-11-19,
-[docs/restart.md](docs/restart.md)). It is **held in lockstep with it**: every change must leave this
+`03ac699`), forked at `49e3d48`, merged with pcengine-rust 0.2.0 at
+`194c120`, with pcengine-rust's clean rewrite at `26ea621` (2026-11-19,
+[docs/restart.md](docs/restart.md)) and with its early display start crop
+at `37f17ba`. It is **held in lockstep with it**: every change must leave this
 board's traces identical to the base board's on every case (and so to the
 reference's), and must measure faster, or it is not kept. Its CPU is
 [huc6280-rust-fast](https://github.com/alewman/huc6280-rust-fast), the speed
@@ -39,12 +40,16 @@ the withdrawn code were moved aside unread first; every speed change outside
 that code is kept, the two inside it are lost ([docs/not-kept.md](docs/not-kept.md)).
 **x4.6 over pcengine-rust** on the five titles (x4.624, x4.596 and x4.728 on
 three code layouts), and level with the 0.2.0 release (x0.988, x1.034,
-x1.028): under "Speed". Gates, run on 2026-11-19 after the merge:
+x1.028): under "Speed". Then pcengine-rust `37f17ba` merged (pcengine-python
+`03ac699`: a display that starts before the row is cropped, where this fork
+panicked), transcribed into the fork's in-place `render_line`; it costs
+nothing (x1.020, x1.026, x0.994 against `7c53f35`). Gates, run on 2026-11-19
+after that merge:
 
 | Gate | What | Result |
 | --- | --- | --- |
-| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals (a 0.2.0 state among them), the VDC wait (`tests/vdc_wait.rs`), `tests/fork.rs`'s invariants, the README's example | 68 pass |
-| Lockstep | every case of `scripts/cases.tsv` against the reference's traces (`external/refcache`, rebuilt by pcengine-rust from `3318027`): Covell's test, the probe card, the 18 picture-gate titles, the five PSG games, the whole library of 179 HuCards and the Street Fighter II' card, every socket, machine row and switch | 275 of 275 identical, on the first run |
+| `cargo test` | the sockets, the pads, the mappers on synthetic images, the PSG level table, the save-state round trip and refusals (a 0.2.0 state among them), the VDC wait (`tests/vdc_wait.rs`), `tests/fork.rs`'s invariants, the README's example | 69 pass |
+| Lockstep | every case of `scripts/cases.tsv` against the reference's traces (`external/refcache`, rebuilt from `03ac699`, byte-identical to pcengine-rust's): Covell's test, the probe card, the 18 picture-gate titles, the five PSG games, the whole library of 179 HuCards and the Street Fighter II' card, every socket, machine row and switch | 275 of 275 identical |
 | Save states (format version 3) | the round trip and the run-ahead pass on the 18 picture-gate titles | 18 of 18 |
 | Seeded faults | pcengine-rust's 66 and seventeen on this fork's shortcuts | 80 caught, 3 missed (the board's wait, as on pcengine-rust) |
 | clippy `-D warnings` (rustc 1.93.1 and stable 1.99.1), fmt, wasm32 build | | pass |
@@ -53,7 +58,7 @@ pcengine-rust's ladder, which this gate runs from the same cases and the
 same reference cache, is in its README (its
 [Status](https://github.com/alewman/pcengine-rust#status) and
 [How it is proven](https://github.com/alewman/pcengine-rust#how-it-is-proven));
-the reference's traces are pcengine-python `3318027`'s on all 275 cases, 84,200
+the reference's traces are pcengine-python `03ac699`'s on all 275 cases, 84,200
 frames. **Nothing here was run on a real console**: the board is proven equal
 to pcengine-python, and how close that is to the hardware is the reference's
 record.
@@ -317,6 +322,14 @@ per cent (two attempts at the sprites did not measure: docs/not-kept.md).
 
 ## How it is proven
 
+**The early display start crop (pcengine-rust `37f17ba`): level.**
+`scripts/ab.sh` against `7c53f35` (best of 8 runs a side, load average about
+13 to 17 from other work; checksums equal on both sides): x1.020 (default),
+x1.026 (nf5), x0.994 (nf6) over the five titles; single titles moved between
+x0.946 and x1.156, which is this machine's noise, not the change (the path it
+adds runs only when the display starts before the row, and the old one is
+otherwise untouched).
+
 **The rule.** A change is kept only if the gate stays green and an A/B
 measurement shows a gain above the A/A noise; it is then one commit with its
 factor in the message. A rejected one is a line in
@@ -324,11 +337,13 @@ factor in the message. A rejected one is a line in
 gate as a tree of its own.
 
 **The gate**, `scripts/ladder.sh` (a few minutes from the cache; `--faults`
-adds the seeded faults, `JOBS=n` the parallelism, default 12): `cargo test`;
+adds the seeded faults, `JOBS=n` the parallelism, default 8): `cargo test`;
 every lockstep case against the reference traces (`python3
 scripts/lockstep.py --reference-cache external/refcache`: 275 of 275; the
-cache is pcengine-rust's, whose traces are pcengine-python's on all of them,
-so no Python runs); the save-state round trip and the run-ahead pass on the
+cache holds pcengine-python's traces of all of them, so no Python runs once
+it is built; its key includes the commit of the reference checked out under
+`external/pcengine-python`, so a copy of pcengine-rust's cache is used only
+with that checkout at the same commit); the save-state round trip and the run-ahead pass on the
 18 picture-gate titles. `pce-bench` adds a check the gate's lines do not
 have: its checksum covers the snapshot's bytes at the end of the run, and
 `scripts/ab.py` refuses to compare two builds whose checksums differ, so
