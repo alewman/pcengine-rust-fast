@@ -35,7 +35,7 @@ pcengine-rust changes one line, its dependency.
 merged (pcengine-python `3318027`: the VDC's line machine, DMAs and parts of
 the chip rewritten from documents after the licence audit) and the core at
 huc6280-rust-fast `73f0829` (huc6280-python `6ce348e`), by path from a sibling
-clone until both are pushed (CI fails until then). The fork's counterparts of
+clone until both were pushed (2026-11-20), by its git pin since. The fork's counterparts of
 the withdrawn code were moved aside unread first; every speed change outside
 that code is kept, the two inside it are lost ([docs/not-kept.md](docs/not-kept.md)).
 **x4.6 over pcengine-rust** on the five titles (x4.624, x4.596 and x4.728 on
@@ -404,8 +404,10 @@ overridden by an environment variable: `LIB` (the directory of the 179
 HuCard `.7z` images, named as No-Intro names them), `COVELL` (Covell's
 `CPU_Test_10.pce`, which `fetch_covell.sh` fetches), `SF2` (the Street
 Fighter II' card, which is not in the library) and `JOBS`. The benchmark's
-five titles are extracted once into `scratch/bench/` (gitignored); the
-library is only read.
+five titles (`scripts/ab.py`, which reads `LIB` and `SF2` the same way and,
+without `LIB`, takes its four library titles from `$NO_INTRO_DIR`'s PC Engine
+set) are extracted once into `scratch/bench/` (gitignored); the library is
+only read.
 
 CI (`.github/workflows/ci.yml`, main and pull requests) runs `cargo fmt
 --check`, `cargo clippy -D warnings`, `cargo test` and rung 1 on Covell's

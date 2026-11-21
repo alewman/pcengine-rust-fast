@@ -17,10 +17,11 @@ name = "pcengine_rust"
 # huc6280-rust-fast (crate huc6280) at 73f0829: the speed fork of huc6280-rust, held in
 # lockstep with it, with huc6280-rust's clean rewrite of 2026-11-19 merged (e1d24a3, from
 # huc6280-python 6ce348e, the revision the reference pcengine-python 3318027 pins). The parent
-# board, pcengine-rust, uses huc6280-rust itself; the API is the same. Not on GitHub yet, so a
-# path to a sibling clone checked out at that commit; once it is pushed this becomes the git pin:
-#   huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "73f08298fe2dad66973cfe75c6b19a3ea95579d5" }
-huc6280 = { package = "huc6280-rust-fast", path = "../huc6280-rust-fast" }
+# board, pcengine-rust, uses huc6280-rust itself; the API is the same. By git revision on GitHub
+# (pushed 2026-11-20; by path from a sibling clone before that). To build against a local
+# checkout of the core instead, without editing this file:
+#   cargo build --config 'patch."https://github.com/alewman/huc6280-rust-fast".huc6280-rust-fast.path="../huc6280-rust-fast"'
+huc6280 = { package = "huc6280-rust-fast", git = "https://github.com/alewman/huc6280-rust-fast", rev = "73f08298fe2dad66973cfe75c6b19a3ea95579d5" }
 # Save states (src/state.rs) and the card's identity in them.
 serde = { version = "1", features = ["derive"] }
 bincode = "1.3"

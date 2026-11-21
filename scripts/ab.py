@@ -14,12 +14,17 @@ the thread's CPU time, not the wall clock. The checksums (every picture, every a
 the master clock) must agree, or the builds do not compute the same thing and the comparison
 is refused. An A/A run (the same binary twice) shows the noise.
 
-The five titles are extracted once into scratch/bench/ (the library is only read).
+The five titles are extracted once into scratch/bench/ (the library is only read). Where they
+are comes from the environment, as for the gate (scripts/lockstep.py): ``LIB`` (the HuCard
+library of ``.7z`` images) and ``SF2`` (the Street Fighter II' card) override make_cases.py's
+defaults; without ``LIB``, the four library titles are taken from ``$NO_INTRO_DIR``'s PC Engine
+set (No-Intro ``.zip``, same names), like SF2's default.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import statistics
 import subprocess
@@ -31,15 +36,19 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 from make_cases import DEFAULTS  # noqa: E402
 
-LIB = DEFAULTS["LIB"]
+ENV = {**DEFAULTS, **{k: os.environ[k] for k in DEFAULTS if k in os.environ}}
+if "LIB" in os.environ:
+    LIB, EXT = os.environ["LIB"], ".7z"
+else:  # the No-Intro set, by environment variable like SF2's default (make_cases.py)
+    LIB, EXT = str(Path(os.environ.get("NO_INTRO_DIR", "NO_INTRO_DIR-unset")) / "NEC - PC Engine - TurboGrafx-16"), ".zip"
 PLAY = ["--press", "run@250+10", "--press", "i@400+6", "--press", "right-ii@480+40"]
 # name, image, arguments: the picture gate's input (RUN at 250, I at 400, right with II from 480)
 TITLES = [
-    ("Blazing Lazers", f"{LIB}/Blazing Lazers (USA).7z", ["--machine", "tg16", *PLAY]),
-    ("Bonk's Adventure", f"{LIB}/Bonk's Adventure (USA).7z", ["--machine", "tg16", *PLAY]),
-    ("R-Type", f"{LIB}/R-Type (USA).7z", ["--machine", "tg16", *PLAY]),
-    ("After Burner II", f"{LIB}/After Burner II (Japan) (En).7z", PLAY),
-    ("Street Fighter II'", DEFAULTS["SF2"], PLAY),
+    ("Blazing Lazers", f"{LIB}/Blazing Lazers (USA){EXT}", ["--machine", "tg16", *PLAY]),
+    ("Bonk's Adventure", f"{LIB}/Bonk's Adventure (USA){EXT}", ["--machine", "tg16", *PLAY]),
+    ("R-Type", f"{LIB}/R-Type (USA){EXT}", ["--machine", "tg16", *PLAY]),
+    ("After Burner II", f"{LIB}/After Burner II (Japan) (En){EXT}", PLAY),
+    ("Street Fighter II'", ENV["SF2"], PLAY),
 ]
 LINE = re.compile(r"([\d.]+) frames/s, check ([0-9A-F]{8})")
 

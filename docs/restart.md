@@ -50,7 +50,8 @@ re-cited from MAME's BSD-3 huc6260.cpp, the timer window 3, `vblank_dots` defaul
 state format version 3) and the API changes (its CHANGELOG, "Unreleased"). The core is
 huc6280-rust-fast `73f0829` (huc6280-rust `e1d24a3`: decimal `ADC`/`SBC` re-derived,
 `VanishedInterrupt::Latched` and `IrqPollCycle::Mednafen` withdrawn, `polled_irq_lines` cleared at
-a boundary that decides an interrupt), by path from a sibling clone until it is pushed.
+a boundary that decides an interrupt), by path from a sibling clone until it was pushed
+(2026-11-20), by its git pin since.
 
 ## The fork's speed changes, item by item
 

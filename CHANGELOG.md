@@ -5,6 +5,19 @@ Not on crates.io; pin a commit (README).
 
 ## Unreleased
 
+### Pinned by git revision (2026-11-20; merged pcengine-rust `64587ee`)
+
+- **huc6280-rust-fast is a git pin again** (`73f0829`, on GitHub since 2026-11-20), not a path to
+  a sibling clone; `Cargo.toml` names the `--config` patch that builds against a local checkout.
+  CI no longer clones it beside the checkout.
+- Merged pcengine-rust `64587ee` (its own repin, the SPDX line `MIT AND BSD-3-Clause` on
+  `src/psg/chip.rs`, and `scripts/fetch_pcenginepython.sh` with `CORE_SOURCE` installing the
+  core with its dependencies: `--no-deps` had left out 6502-python).
+- `scripts/ab.py` takes the titles from the environment as the gate does: `LIB` (the HuCard
+  library) and `SF2` override the defaults, and without `LIB` the four library titles are looked
+  up in `$NO_INTRO_DIR`'s PC Engine set (`.zip`). It used the defaults alone, so the library
+  could not be named and the benchmark failed unless the script was edited.
+
 ### The early display start (pcengine-rust `37f17ba`, pcengine-python `03ac699`)
 
 - **Merged pcengine-rust `37f17ba`** (local, not pushed yet): `render_line` crops a display that
@@ -52,9 +65,8 @@ fork's counterparts of the withdrawn code were moved aside unread first (`7a6a3f
   below). The fork's public additions are now two, `Board::touch` and `vdc::background::row_into`.
 - **Save states: format version 3** (the VDC's and the timer's layouts changed); versions 1 and 2
   are refused, not converted, as on the base board.
-- **The core**: huc6280-rust-fast `73f0829` by path from a sibling clone (`../huc6280-rust-fast`);
-  `Cargo.toml` names the git pin for after the push, and CI clones it by that revision, so **CI
-  fails until huc6280-rust-fast `73f0829` is on GitHub**.
+- **The core**: huc6280-rust-fast `73f0829` by path from a sibling clone (`../huc6280-rust-fast`)
+  until it was pushed; the git pin since 2026-11-20 (above).
 - **The fork's speed changes**: every one outside the withdrawn code kept unchanged. Lost with it:
   the line event list's reuse (old sequencer; nothing to re-apply) and the sprite list's reuse
   (re-applied fresh, x1.024/x1.010/x0.979 on three layouts: not kept). The row buffer's reuse
