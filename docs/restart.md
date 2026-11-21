@@ -113,5 +113,6 @@ extracted into `scratch/bench/`.
 
 Everything pcengine-python's restart.md lists as open about the hardware (the raster compare's
 place, the scroll latch fit, the display start, the front porch, the SAT transfer at 7 and 10 MHz,
-the timer window, the vblank fit, the two library regressions against the referees). They belong
-upstream; this fork follows the base board.
+the timer window, the two library regressions against the referees). They belong
+upstream; this fork follows the base board. The vblank fit is settled (Aubrey, 2026-11-20: -16
+kept as the default, -18 a switch).
